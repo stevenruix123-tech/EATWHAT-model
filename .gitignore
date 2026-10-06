@@ -1,0 +1,25 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---- 运行时产物（启动服务后生成，不应入库）----
+app/artifacts/server.log
+app/artifacts/server.pid
+
+# 界面快照由 app/snapshot_ui.py 生成；保留 ui_shot.png（README 引用），
+# 中间产物 ui_snapshot.html 不入库
+app/artifacts/ui_snapshot.html
+
+# ---- 容量扫描：只保留结论与逐轮明细，不重复存一份数据集 ----
+# （那是一份和 app/artifacts 内容相同的数据集，共约 4 MB，
+#   需要复现时在该目录跑 `python build_dataset.py` 即可重新生成）
+app/capacity-study/artifacts/
+app/capacity-study/__pycache__/
+
+# ---- 临时/调试产物 ----
+*.log
+*.tmp
+_live.png

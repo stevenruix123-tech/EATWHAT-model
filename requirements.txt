@@ -1,0 +1,10 @@
+# 「今天该吃什么」运行依赖
+#
+# 这个包只需要两个第三方库，模型全部是手写 numpy 实现，不需要 PyTorch。
+# 安装：双击 安装依赖.bat，或手动执行
+#     python -m pip install -r requirements.txt
+#
+# 版本下限取得比较松：代码只用 numpy/pandas 的稳定基础 API，
+# 在 numpy 1.24+ / pandas 2.0+ 上都能跑（打包验证环境为 numpy 2.5.2 + pandas 3.0.6）。
+numpy>=1.24
+pandas>=2.0

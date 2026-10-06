@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>今天该吃什么</title>
+<style>
+  :root{
+    --bg:#f7f7f5; --card:#fff; --ink:#1c1c1e; --muted:#6b7280; --line:#e5e7eb;
+    --brand:#e8590c; --brand-soft:#fff4ec; --bar:#f59e0b;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#141416; --card:#1e1e21; --ink:#f2f2f4; --muted:#9ca3af;
+           --line:#2e2e33; --brand:#ff7a2f; --brand-soft:#2a1c12; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  header{padding:28px 20px 8px;max-width:1080px;margin:0 auto}
+  h1{margin:0;font-size:24px;letter-spacing:.5px}
+  .sub{color:var(--muted);font-size:13px;margin-top:6px}
+  .wrap{max-width:1080px;margin:0 auto;padding:12px 20px 60px;
+    display:grid;grid-template-columns:1.05fr 1fr;gap:22px;align-items:start}
+  @media (max-width:880px){ .wrap{grid-template-columns:1fr} }
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:18px 18px 20px}
+  .card h2{margin:0 0 14px;font-size:15px;font-weight:600;color:var(--muted);
+    letter-spacing:.4px}
+  .field{margin-bottom:14px}
+  .field > label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+  .seg{display:flex;flex-wrap:wrap;gap:6px}
+  .seg button{border:1px solid var(--line);background:transparent;color:var(--ink);
+    padding:6px 11px;border-radius:999px;font-size:13px;cursor:pointer;transition:.12s}
+  .seg button:hover{border-color:var(--brand)}
+  .seg button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  input[type=range]{width:100%;accent-color:var(--brand)}
+  .rowv{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
+  .big{font-size:17px;color:var(--ink);font-weight:600}
+  .go{width:100%;margin-top:8px;padding:12px;border:0;border-radius:10px;
+    background:var(--brand);color:#fff;font-size:15px;font-weight:600;cursor:pointer}
+  .go:hover{filter:brightness(1.06)}
+  .presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+  .presets button{border:1px dashed var(--line);background:transparent;color:var(--muted);
+    padding:5px 10px;border-radius:999px;font-size:12.5px;cursor:pointer}
+  .presets button:hover{color:var(--brand);border-color:var(--brand)}
+  .cuisine{font-size:13px;color:var(--muted);margin-bottom:12px}
+  .bar{display:inline-block;height:7px;border-radius:4px;background:var(--bar);
+    vertical-align:middle;margin:0 7px 2px 0}
+  .pick{border:1px solid var(--brand);background:var(--brand-soft);border-radius:12px;
+    padding:14px 16px;margin-bottom:12px}
+  .pick .name{font-size:21px;font-weight:700;letter-spacing:.3px}
+  .pick .meta{font-size:12.5px;color:var(--muted);margin-top:3px}
+  .pick .why{font-size:13px;margin-top:8px;color:var(--ink);opacity:.85}
+  .alt{display:flex;justify-content:space-between;gap:10px;padding:9px 2px;
+    border-bottom:1px dashed var(--line);font-size:14px}
+  .alt:last-child{border-bottom:0}
+  .alt .tag{color:var(--muted);font-size:12.5px}
+  table.raw{width:100%;border-collapse:collapse;margin-top:8px;font-size:12.5px;
+    font-variant-numeric:tabular-nums}
+  table.raw th{text-align:left;color:var(--muted);font-weight:500;padding:3px 4px;
+    border-bottom:1px solid var(--line)}
+  table.raw td{padding:3px 4px;border-bottom:1px dashed var(--line)}
+  table.raw td:last-child{text-align:right;color:var(--muted)}
+  .pct{color:var(--muted);font-variant-numeric:tabular-nums;font-size:13px}
+  .truth{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);
+    font-size:12.5px;color:var(--muted)}
+  .empty{color:var(--muted);font-size:14px;padding:26px 4px;text-align:center}
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.4);
+    border-top-color:#fff;border-radius:50%;animation:s .7s linear infinite;
+    vertical-align:-2px;margin-right:7px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .fine{font-size:12px;color:var(--muted);margin-top:10px}
+  details{margin-top:12px}
+  summary{cursor:pointer;font-size:13px;color:var(--muted)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .chips button{border:1px solid var(--line);background:transparent;color:var(--muted);
+    padding:4px 9px;border-radius:8px;font-size:12px;cursor:pointer}
+  .chips button.rm{background:var(--brand);color:#fff;border-color:var(--brand)}
+</style>
+</head>
+<body>
+<header>
+  <h1>今天该吃什么</h1>
+  <div class="sub">两层决策模型 · 第一层判断品类，第二层在品类内排序 ·
+    <span id="stats">317 道菜 / 18 个品类 · 训练自 2000 个情境、7340 条记录</span></div>
+</header>
+
+<div class="wrap">
+  <section class="card">
+    <h2>你的情况</h2>
+    <div class="presets" id="presets"><button>深夜加班</button><button>工作日午餐</button><button>周末朋友聚餐</button><button>减脂期午餐</button><button>约会晚餐</button><button>预算紧张</button><button>感冒没胃口</button><button>下午犯困</button><button>早起赶时间</button><button>海鲜过敏</button></div>
+    <div id="form"><div class="field"><label>时段</label><div class="seg"><button>早餐</button><button>午餐</button><button>下午加餐</button><button>晚餐</button><button class="on">夜宵</button></div></div><div class="field"><label>饥饿程度</label><div class="seg"><button>1</button><button>2</button><button>3</button><button>4</button><button class="on">5</button></div></div><div class="field"><label>可用时间(分钟)</label><input type="range" min="5" max="150" step="5"><div class="rowv"><span></span><span class="big">25 分钟</span></div></div><div class="field"><label>预算</label><div class="seg"><button>省着点</button><button class="on">正常</button><button>想吃好点</button><button>不差钱</button></div></div><div class="field"><label>心情</label><div class="seg"><button>开心</button><button>一般</button><button class="on">疲惫</button><button>压力大</button><button>低落</button><button>兴奋</button></div></div><div class="field"><label>天气</label><div class="seg"><button>晴</button><button>阴</button><button>雨</button><button>雪</button><button>热</button><button class="on">冷</button></div></div><div class="field"><label>和谁吃</label><div class="seg"><button class="on">一个人</button><button>同事</button><button>朋友</button><button>家人</button><button>约会</button></div></div><div class="field"><label>健康诉求</label><div class="seg"><button class="on">不关心</button><button>随便</button><button>想健康</button><button>严格控制</button></div></div><div class="field"><label>吃辣能力</label><div class="seg"><button>不吃辣</button><button>微辣</button><button class="on">中辣</button><button>重辣</button></div></div><div class="field"><label>忌口（可留空）</label><div class="seg"><button class="on">无忌口</button><button>海鲜</button><button>乳制品</button><button>麸质</button><button>花生</button><button>海鲜,乳制品</button><button>素食</button></div></div></div>
+    <button class="go" id="go">给我推荐</button>
+    <details>
+      <summary>不想吃的东西（点一下排除，再点恢复）</summary>
+      <div class="chips" id="chips"><button data-name="番茄牛腩饭">番茄牛腩饭</button><button data-name="黄焖鸡米饭">黄焖鸡米饭</button><button data-name="青椒肉丝">青椒肉丝</button><button data-name="台式卤肉饭">台式卤肉饭</button><button data-name="咖喱鸡排饭">咖喱鸡排饭</button><button data-name="梅菜扣肉饭">梅菜扣肉饭</button><button data-name="兰州牛肉面">兰州牛肉面</button><button data-name="重庆小面">重庆小面</button><button data-name="番茄鸡蛋面">番茄鸡蛋面</button><button data-name="炸酱面">炸酱面</button><button data-name="螺蛳粉">螺蛳粉</button><button data-name="云南小锅米线">云南小锅米线</button><button data-name="番茄炒蛋">番茄炒蛋</button><button data-name="麻婆豆腐">麻婆豆腐</button><button data-name="清蒸鲈鱼">清蒸鲈鱼</button><button data-name="宫保鸡丁">宫保鸡丁</button><button data-name="上海红烧肉">上海红烧肉</button><button data-name="蒜蓉西兰花">蒜蓉西兰花</button><button data-name="地三鲜">地三鲜</button><button data-name="麻辣烫">麻辣烫</button><button data-name="清汤火锅">清汤火锅</button><button data-name="牛油麻辣火锅">牛油麻辣火锅</button><button data-name="关东煮">关东煮</button><button data-name="冒菜">冒菜</button><button data-name="菌汤火锅">菌汤火锅</button><button data-name="烤羊肉串">烤羊肉串</button><button data-name="烤鸡翅">烤鸡翅</button><button data-name="烤茄子">烤茄子</button><button data-name="烤冷面">烤冷面</button><button data-name="韩式炸鸡">韩式炸鸡</button><button data-name="铁板豆腐">铁板豆腐</button><button data-name="鸡胸肉沙拉">鸡胸肉沙拉</button><button data-name="藜麦牛油果碗">藜麦牛油果碗</button><button data-name="三文鱼沙拉">三文鱼沙拉</button><button data-name="全麦鸡肉三明治">全麦鸡肉三明治</button><button data-name="水煮时蔬+溏心蛋">水煮时蔬+溏心蛋</button><button data-name="希腊酸奶坚果碗">希腊酸奶坚果碗</button><button data-name="番茄肉酱意面">番茄肉酱意面</button><button data-name="香煎牛排">香煎牛排</button><button data-name="芝士汉堡+薯条">芝士汉堡+薯条</button><button data-name="奶油蘑菇汤+面包">奶油蘑菇汤+面包</button><button data-name="玛格丽特披萨">玛格丽特披萨</button><button data-name="烤鸡胸配土豆泥">烤鸡胸配土豆泥</button><button data-name="皮蛋瘦肉粥">皮蛋瘦肉粥</button><button data-name="小笼包+豆浆">小笼包+豆浆</button><button data-name="杂粮煎饼果子">杂粮煎饼果子</button><button data-name="燕麦牛奶粥">燕麦牛奶粥</button><button data-name="手撕包菜">手撕包菜</button><button data-name="毛豆炒肉丝">毛豆炒肉丝</button><button data-name="清炒芥兰">清炒芥兰</button><button data-name="番茄炒牛肉">番茄炒牛肉</button><button data-name="白灼菜心">白灼菜心</button><button data-name="腐乳通菜">腐乳通菜</button><button data-name="茭白炒肉丝">茭白炒肉丝</button><button data-name="蒜蓉空心菜">蒜蓉空心菜</button><button data-name="蚝油生菜">蚝油生菜</button><button data-name="辣椒炒肉">辣椒炒肉</button><button data-name="醋溜白菜">醋溜白菜</button><button data-name="雪菜炒毛豆">雪菜炒毛豆</button><button data-name="香干炒芹菜">香干炒芹菜</button><button data-name="鱼香肉丝">鱼香肉丝</button><button data-name="上汤娃娃菜">上汤娃娃菜</button><button data-name="八宝辣酱">八宝辣酱</button><button data-name="咕噜肉">咕噜肉</button><button data-name="咸蛋蒸肉饼">咸蛋蒸肉饼</button><button data-name="四喜烤麸">四喜烤麸</button><button data-name="小炒黄牛肉">小炒黄牛肉</button><button data-name="干煸四季豆">干煸四季豆</button><button data-name="椒盐豆腐">椒盐豆腐</button><button data-name="梅菜蒸肉饼">梅菜蒸肉饼</button><button data-name="清蒸水蛋">清蒸水蛋</button><button data-name="白灼虾">白灼虾</button><button data-name="菜心炒牛肉">菜心炒牛肉</button><button data-name="豉汁蒸排骨">豉汁蒸排骨</button><button data-name="酿豆腐">酿豆腐</button><button data-name="丝瓜炒牛肉">丝瓜炒牛肉</button><button data-name="凉瓜炒牛肉">凉瓜炒牛肉</button><button data-name="咸鱼茄煲">咸鱼茄煲</button><button data-name="姜葱炒牛肉">姜葱炒牛肉</button><button data-name="姜葱焗鱼">姜葱焗鱼</button><button data-name="清蒸九节虾">清蒸九节虾</button><button data-name="清蒸海鱼">清蒸海鱼</button><button data-name="烧肉炒芥兰">烧肉炒芥兰</button><button data-name="煎酿三宝">煎酿三宝</button><button data-name="云吞面">云吞面</button><button data-name="干炒牛河">干炒牛河</button><button data-name="柴鱼花生粥">柴鱼花生粥</button><button data-name="桂林米粉">桂林米粉</button><button data-name="湿炒牛河">湿炒牛河</button><button data-name="牛腩面">牛腩面</button><button data-name="猪杂汤粉">猪杂汤粉</button><button data-name="猪肠粉">猪肠粉</button><button data-name="生滚牛肉粥">生滚牛肉粥</button><button data-name="生滚鱼片粥">生滚鱼片粥</button><button data-name="酸辣粉">酸辣粉</button><button data-name="星洲炒米粉">星洲炒米粉</button><button data-name="海鲜砂锅粥">海鲜砂锅粥</button><button data-name="潮汕牛肉丸粉">潮汕牛肉丸粉</button><button data-name="濑粉">濑粉</button><button data-name="猪红粥">猪红粥</button><button data-name="碗仔翅">碗仔翅</button><button data-name="豉油皇炒面">豉油皇炒面</button><button data-name="车仔面">车仔面</button><button data-name="陈村粉">陈村粉</button><button data-name="叉烧包">叉烧包</button><button data-name="干蒸烧卖">干蒸烧卖</button><button data-name="肠粉(早茶)">肠粉(早茶)</button><button data-name="虾饺">虾饺</button><button data-name="凤爪">凤爪</button><button data-name="奶黄包">奶黄包</button><button data-name="流沙包">流沙包</button><button data-name="炸春卷">炸春卷</button><button data-name="白糖糕">白糖糕</button><button data-name="糯米鸡">糯米鸡</button><button data-name="腐皮卷">腐皮卷</button><button data-name="莲蓉包">莲蓉包</button><button data-name="马拉糕">马拉糕</button><button data-name="上海生煎包">上海生煎包</button><button data-name="南翔小笼包">南翔小笼包</button><button data-name="及第粥">及第粥</button><button data-name="咸豆浆">咸豆浆</button><button data-name="明火白粥">明火白粥</button><button data-name="油条">油条</button><button data-name="甜豆浆">甜豆浆</button><button data-name="白粥配咸菜">白粥配咸菜</button><button data-name="皮蛋瘦肉粥(珠三角)">皮蛋瘦肉粥(珠三角)</button><button data-name="粢饭团">粢饭团</button><button data-name="糯米烧卖">糯米烧卖</button><button data-name="肠粉">肠粉</button><button data-name="艇仔粥">艇仔粥</button><button data-name="菜肉大馄饨">菜肉大馄饨</button><button data-name="豆腐花">豆腐花</button><button data-name="鲜肉小馄饨">鲜肉小馄饨</button><button data-name="鲜肉烧卖">鲜肉烧卖</button><button data-name="千层油糕">千层油糕</button><button data-name="叉烧酥">叉烧酥</button><button data-name="咖喱牛肉汤">咖喱牛肉汤</button><button data-name="咸水角">咸水角</button><button data-name="嘉兴鲜肉粽">嘉兴鲜肉粽</button><button data-name="扬州三丁包">扬州三丁包</button><button data-name="条头糕">条头糕</button><button data-name="炸两">炸两</button><button data-name="芋头糕">芋头糕</button><button data-name="上海熏鱼">上海熏鱼</button><button data-name="宁波烤菜">宁波烤菜</button><button data-name="油焖笋">油焖笋</button><button data-name="白斩鸡">白斩鸡</button><button data-name="糖醋排骨">糖醋排骨</button><button data-name="红烧狮子头">红烧狮子头</button><button data-name="霉干菜烧肉">霉干菜烧肉</button><button data-name="东坡肉">东坡肉</button><button data-name="凉拌马兰头">凉拌马兰头</button><button data-name="南京烤鸭">南京烤鸭</button><button data-name="无锡酱排骨">无锡酱排骨</button><button data-name="梅菜扣肉">梅菜扣肉</button><button data-name="梭子蟹炒年糕">梭子蟹炒年糕</button><button data-name="水晶虾仁">水晶虾仁</button><button data-name="油爆虾">油爆虾</button><button data-name="清炒虾仁">清炒虾仁</button><button data-name="打边炉">打边炉</button><button data-name="椰子鸡火锅">椰子鸡火锅</button><button data-name="水煮鱼">水煮鱼</button><button data-name="潮汕牛肉火锅">潮汕牛肉火锅</button><button data-name="烤鱼">烤鱼</button><button data-name="酸菜鱼">酸菜鱼</button><button data-name="串串香">串串香</button><button data-name="冷锅串串">冷锅串串</button><button data-name="四川麻辣香锅">四川麻辣香锅</button><button data-name="小龙虾">小龙虾</button><button data-name="烤生蚝">烤生蚝</button><button data-name="牛杂火锅">牛杂火锅</button><button data-name="猪肚鸡">猪肚鸡</button><button data-name="卤蛋">卤蛋</button><button data-name="卤鸡爪">卤鸡爪</button><button data-name="沙县扁肉">沙县扁肉</button><button data-name="沙县拌面">沙县拌面</button><button data-name="炒年糕">炒年糕</button><button data-name="炒面">炒面</button><button data-name="炸串">炸串</button><button data-name="炸鸡">炸鸡</button><button data-name="炸鸡排">炸鸡排</button><button data-name="煎饺">煎饺</button><button data-name="煎饼果子">煎饼果子</button><button data-name="薯条">薯条</button><button data-name="锅贴">锅贴</button><button data-name="鸡蛋灌饼">鸡蛋灌饼</button><button data-name="卤味拼盘">卤味拼盘</button><button data-name="手抓饼">手抓饼</button><button data-name="沙县蒸饺">沙县蒸饺</button><button data-name="烤玉米">烤玉米</button><button data-name="烤金针菇">烤金针菇</button><button data-name="烤韭菜">烤韭菜</button><button data-name="爆米花">爆米花</button><button data-name="盐酥鸡">盐酥鸡</button><button data-name="臭豆腐">臭豆腐</button><button data-name="卤水鸡翅">卤水鸡翅</button><button data-name="烧鸭">烧鸭</button><button data-name="烧鹅">烧鹅</button><button data-name="牛杂">牛杂</button><button data-name="白切鸡">白切鸡</button><button data-name="脆皮烧肉">脆皮烧肉</button><button data-name="蜜汁叉烧">蜜汁叉烧</button><button data-name="豉油鸡">豉油鸡</button><button data-name="卤水拼盘">卤水拼盘</button><button data-name="卤水掌翼">卤水掌翼</button><button data-name="卤水豆腐">卤水豆腐</button><button data-name="卤水鸭掌">卤水鸭掌</button><button data-name="手撕鸡">手撕鸡</button><button data-name="柱候牛腩">柱候牛腩</button><button data-name="清汤牛腩">清汤牛腩</button><button data-name="盐焗鸡">盐焗鸡</button><button data-name="金钱肚">金钱肚</button><button data-name="叉烧饭">叉烧饭</button><button data-name="咸肉菜饭">咸肉菜饭</button><button data-name="扬州炒饭">扬州炒饭</button><button data-name="油鸡饭">油鸡饭</button><button data-name="烧腊双拼饭">烧腊双拼饭</button><button data-name="烧鹅饭">烧鹅饭</button><button data-name="猪脚饭">猪脚饭</button><button data-name="腊味煲仔饭">腊味煲仔饭</button><button data-name="菜泡饭">菜泡饭</button><button data-name="豉油鸡饭">豉油鸡饭</button><button data-name="隆江猪脚饭">隆江猪脚饭</button><button data-name="隆江猪脚饭(快餐)">隆江猪脚饭(快餐)</button><button data-name="北菇滑鸡饭">北菇滑鸡饭</button><button data-name="叉烧煎蛋饭">叉烧煎蛋饭</button><button data-name="海南鸡饭">海南鸡饭</button><button data-name="滑鸡煲仔饭">滑鸡煲仔饭</button><button data-name="猪油拌饭">猪油拌饭</button><button data-name="窝蛋牛肉煲仔饭">窝蛋牛肉煲仔饭</button><button data-name="窝蛋牛肉饭">窝蛋牛肉饭</button><button data-name="菜饭骨头汤">菜饭骨头汤</button><button data-name="豉汁排骨煲仔饭">豉汁排骨煲仔饭</button><button data-name="双皮奶">双皮奶</button><button data-name="杨枝甘露">杨枝甘露</button><button data-name="海带绿豆沙">海带绿豆沙</button><button data-name="番薯糖水">番薯糖水</button><button data-name="绿豆沙">绿豆沙</button><button data-name="芝麻糊">芝麻糊</button><button data-name="菠萝包">菠萝包</button><button data-name="菠萝油">菠萝油</button><button data-name="蛋挞">蛋挞</button><button data-name="陈皮红豆沙">陈皮红豆沙</button><button data-name="姜撞奶">姜撞奶</button><button data-name="定胜糕">定胜糕</button><button data-name="木瓜炖雪耳">木瓜炖雪耳</button><button data-name="核桃糊">核桃糊</button><button data-name="桂花糖芋艿">桂花糖芋艿</button><button data-name="炖蛋">炖蛋</button><button data-name="红豆冰">红豆冰</button><button data-name="腐竹白果薏米糖水">腐竹白果薏米糖水</button><button data-name="芒果班戟">芒果班戟</button><button data-name="例汤">例汤</button><button data-name="冬瓜排骨汤">冬瓜排骨汤</button><button data-name="冬瓜薏米猪骨汤">冬瓜薏米猪骨汤</button><button data-name="玉米胡萝卜排骨汤">玉米胡萝卜排骨汤</button><button data-name="番茄蛋花汤">番茄蛋花汤</button><button data-name="紫菜蛋花汤">紫菜蛋花汤</button><button data-name="西洋菜猪骨汤">西洋菜猪骨汤</button><button data-name="霸王花猪骨汤">霸王花猪骨汤</button><button data-name="青红萝卜猪骨汤">青红萝卜猪骨汤</button><button data-name="山药排骨汤">山药排骨汤</button><button data-name="椰子鸡汤">椰子鸡汤</button><button data-name="清补凉鸡汤">清补凉鸡汤</button><button data-name="火腿冬瓜汤">火腿冬瓜汤</button><button data-name="竹蔗茅根猪骨汤">竹蔗茅根猪骨汤</button><button data-name="笋干老鸭煲">笋干老鸭煲</button><button data-name="粉葛鲮鱼汤">粉葛鲮鱼汤</button><button data-name="罗宋汤">罗宋汤</button><button data-name="老鸭汤">老鸭汤</button><button data-name="寿司拼盘">寿司拼盘</button><button data-name="日式咖喱饭">日式咖喱饭</button><button data-name="牛肉盖饭">牛肉盖饭</button><button data-name="芝士汉堡">芝士汉堡</button><button data-name="三文鱼刺身">三文鱼刺身</button><button data-name="凯撒鸡肉卷">凯撒鸡肉卷</button><button data-name="奶油培根意面">奶油培根意面</button><button data-name="奶油蘑菇汤">奶油蘑菇汤</button><button data-name="帕尼尼">帕尼尼</button><button data-name="海鲜披萨">海鲜披萨</button><button data-name="炸猪排饭">炸猪排饭</button><button data-name="炸鱼薯条">炸鱼薯条</button><button data-name="炸鸡汉堡">炸鸡汉堡</button><button data-name="丝袜奶茶">丝袜奶茶</button><button data-name="冻柠茶">冻柠茶</button><button data-name="奶茶">奶茶</button><button data-name="拿铁">拿铁</button><button data-name="水煮时蔬">水煮时蔬</button><button data-name="珍珠奶茶">珍珠奶茶</button><button data-name="美式咖啡">美式咖啡</button><button data-name="凯撒沙拉">凯撒沙拉</button><button data-name="波奇饭">波奇饭</button><button data-name="藜麦鸡胸沙拉">藜麦鸡胸沙拉</button><button data-name="鲜榨橙汁">鲜榨橙汁</button><button data-name="上海大排面">上海大排面</button><button data-name="上海辣肉面">上海辣肉面</button><button data-name="上海阳春面">上海阳春面</button><button data-name="杭州片儿川">杭州片儿川</button><button data-name="苏州奥灶面">苏州奥灶面</button><button data-name="葱油拌面">葱油拌面</button><button data-name="雪菜肉丝面">雪菜肉丝面</button><button data-name="上海冷面">上海冷面</button><button data-name="上海大肠面">上海大肠面</button><button data-name="上海炒面">上海炒面</button><button data-name="上海烂糊面">上海烂糊面</button><button data-name="两面黄">两面黄</button><button data-name="南京皮肚面">南京皮肚面</button><button data-name="南京老卤面">南京老卤面</button><button data-name="双浇面">双浇面</button><button data-name="开洋葱油拌面">开洋葱油拌面</button><button data-name="可颂">可颂</button><button data-name="吐司配果酱">吐司配果酱</button><button data-name="火腿芝士三明治">火腿芝士三明治</button><button data-name="牛油果吐司">牛油果吐司</button><button data-name="瑞士卷">瑞士卷</button><button data-name="蛋卷">蛋卷</button><button data-name="蛋糕卷">蛋糕卷</button></div>
+    </details>
+    <div class="fine">模型只看这些情境特征和菜品属性，没有联网、没有调用大模型。</div>
+  </section>
+
+  <section class="card">
+    <h2>推荐结果</h2>
+    <div id="out"><div class="cuisine">第一层判断： <span class="bar" style="width:126px"></span><b>烧烤小吃</b> 97% &nbsp;&nbsp; <span class="bar" style="width:6px"></span><b>广式粥粉面</b> 2% &nbsp;&nbsp; <span class="bar" style="width:6px"></span><b>家常炒菜</b> 1%</div><div class="pick"><div class="name">炒年糕</div><div class="meta">烧烤小吃 · 22 元 · 12 分钟</div><div class="why">为什么：快(12分钟)、热乎</div></div><div class="alt"><div><b>第2名 · 鸡蛋灌饼</b><span class="tag"> · 烧烤小吃 · 12元 · 快(8分钟)、热乎、便宜(12元)</span></div></div><div class="alt"><div><b>第3名 · 煎饼果子</b><span class="tag"> · 烧烤小吃 · 12元 · 快(8分钟)、热乎、便宜(12元)</span></div></div><details open=""><summary>看模型给每道菜的原始打分（不美化）</summary><div class="fine">分数是模型学出来的效用预测值，<b>只能在同一品类内横向比较</b>，跨品类没有可比性（这是两层结构的特点）。同一品类内分数越接近，说明这几道菜本来就差不多，随便挑一个都行。</div><table class="raw"><tbody><tr><th>菜</th><th>分数</th></tr><tr><td>炒年糕</td><td>0.704</td></tr><tr><td>鸡蛋灌饼</td><td>0.319</td></tr><tr><td>煎饼果子</td><td>0.278</td></tr><tr><td>烤鸡翅</td><td>0.204</td></tr><tr><td>沙县蒸饺</td><td>0.115</td></tr><tr><td>煎饺</td><td>0.044</td></tr><tr><td>锅贴</td><td>0.030</td></tr><tr><td>臭豆腐</td><td>-0.309</td></tr><tr><td>沙县拌面</td><td>-0.397</td></tr><tr><td>炸串</td><td>-1.635</td></tr><tr><td>烤冷面</td><td>-1.720</td></tr><tr><td>烤茄子</td><td>-1.809</td></tr><tr><td>炒面</td><td>-1.902</td></tr><tr><td>烤金针菇</td><td>-1.948</td></tr><tr><td>烤玉米</td><td>-2.263</td></tr><tr><td>卤味拼盘</td><td>-2.609</td></tr><tr><td>烤羊肉串</td><td>-2.626</td></tr><tr><td>铁板豆腐</td><td>-2.703</td></tr><tr><td>薯条</td><td>-2.860</td></tr><tr><td>手抓饼</td><td>-3.000</td></tr><tr><td>沙县扁肉</td><td>-4.104</td></tr><tr><td>烤韭菜</td><td>-4.143</td></tr><tr><td>爆米花</td><td>-4.385</td></tr><tr><td>卤鸡爪</td><td>-4.768</td></tr><tr><td>炸鸡</td><td>-5.327</td></tr><tr><td>炸鸡排</td><td>-5.561</td></tr><tr><td>盐酥鸡</td><td>-5.582</td></tr><tr><td>卤蛋</td><td>-6.416</td></tr><tr><td>韩式炸鸡</td><td>-6.612</td></tr></tbody></table></details><div class="truth">对照：规则下的最优是「炒年糕」(效用 0.6746)，本次首推效用 0.6746。效用是 0~1 的连续值。</div></div>
+  </section>
+</div>
+
+<script>const __SNAP_META__ = {"fields": [{"key": "time_slot", "label": "时段", "options": ["早餐", "午餐", "下午加餐", "晚餐", "夜宵"]}, {"key": "hunger", "label": "饥饿程度", "options": ["1", "2", "3", "4", "5"]}, {"key": "available_time", "label": "可用时间(分钟)", "options": []}, {"key": "budget", "label": "预算", "options": ["省着点", "正常", "想吃好点", "不差钱"]}, {"key": "mood", "label": "心情", "options": ["开心", "一般", "疲惫", "压力大", "低落", "兴奋"]}, {"key": "weather", "label": "天气", "options": ["晴", "阴", "雨", "雪", "热", "冷"]}, {"key": "companion", "label": "和谁吃", "options": ["一个人", "同事", "朋友", "家人", "约会"]}, {"key": "health_goal", "label": "健康诉求", "options": ["不关心", "随便", "想健康", "严格控制"]}, {"key": "spicy_tol", "label": "吃辣能力", "options": ["不吃辣", "微辣", "中辣", "重辣"]}, {"key": "taboo", "label": "忌口（可留空）", "options": ["", "海鲜", "乳制品", "麸质", "花生", "海鲜,乳制品", "素食"]}], "dishes": [{"id": 0, "name": "番茄牛腩饭", "category": "中式快餐盖饭"}, {"id": 1, "name": "黄焖鸡米饭", "category": "中式快餐盖饭"}, {"id": 2, "name": "青椒肉丝", "category": "中式快餐盖饭"}, {"id": 3, "name": "台式卤肉饭", "category": "中式快餐盖饭"}, {"id": 4, "name": "咖喱鸡排饭", "category": "中式快餐盖饭"}, {"id": 5, "name": "梅菜扣肉饭", "category": "中式快餐盖饭"}, {"id": 6, "name": "兰州牛肉面", "category": "面食粉面"}, {"id": 7, "name": "重庆小面", "category": "面食粉面"}, {"id": 8, "name": "番茄鸡蛋面", "category": "面食粉面"}, {"id": 9, "name": "炸酱面", "category": "面食粉面"}, {"id": 10, "name": "螺蛳粉", "category": "面食粉面"}, {"id": 11, "name": "云南小锅米线", "category": "面食粉面"}, {"id": 12, "name": "番茄炒蛋", "category": "家常炒菜"}, {"id": 13, "name": "麻婆豆腐", "category": "家常炒菜"}, {"id": 14, "name": "清蒸鲈鱼", "category": "家常炒菜"}, {"id": 15, "name": "宫保鸡丁", "category": "家常炒菜"}, {"id": 16, "name": "上海红烧肉", "category": "家常炒菜"}, {"id": 17, "name": "蒜蓉西兰花", "category": "家常炒菜"}, {"id": 18, "name": "地三鲜", "category": "家常炒菜"}, {"id": 19, "name": "麻辣烫", "category": "火锅麻辣烫"}, {"id": 20, "name": "清汤火锅", "category": "火锅麻辣烫"}, {"id": 21, "name": "牛油麻辣火锅", "category": "火锅麻辣烫"}, {"id": 22, "name": "关东煮", "category": "火锅麻辣烫"}, {"id": 23, "name": "冒菜", "category": "火锅麻辣烫"}, {"id": 24, "name": "菌汤火锅", "category": "火锅麻辣烫"}, {"id": 25, "name": "烤羊肉串", "category": "烧烤小吃"}, {"id": 26, "name": "烤鸡翅", "category": "烧烤小吃"}, {"id": 27, "name": "烤茄子", "category": "烧烤小吃"}, {"id": 28, "name": "烤冷面", "category": "烧烤小吃"}, {"id": 29, "name": "韩式炸鸡", "category": "烧烤小吃"}, {"id": 30, "name": "铁板豆腐", "category": "烧烤小吃"}, {"id": 31, "name": "鸡胸肉沙拉", "category": "轻食健康"}, {"id": 32, "name": "藜麦牛油果碗", "category": "轻食健康"}, {"id": 33, "name": "三文鱼沙拉", "category": "轻食健康"}, {"id": 34, "name": "全麦鸡肉三明治", "category": "轻食健康"}, {"id": 35, "name": "水煮时蔬+溏心蛋", "category": "轻食健康"}, {"id": 36, "name": "希腊酸奶坚果碗", "category": "轻食健康"}, {"id": 37, "name": "番茄肉酱意面", "category": "西式简餐"}, {"id": 38, "name": "香煎牛排", "category": "西式简餐"}, {"id": 39, "name": "芝士汉堡+薯条", "category": "西式简餐"}, {"id": 40, "name": "奶油蘑菇汤+面包", "category": "西式简餐"}, {"id": 41, "name": "玛格丽特披萨", "category": "西式简餐"}, {"id": 42, "name": "烤鸡胸配土豆泥", "category": "西式简餐"}, {"id": 43, "name": "皮蛋瘦肉粥", "category": "早餐粥点"}, {"id": 44, "name": "小笼包+豆浆", "category": "早餐粥点"}, {"id": 45, "name": "杂粮煎饼果子", "category": "早餐粥点"}, {"id": 46, "name": "燕麦牛奶粥", "category": "早餐粥点"}, {"id": 47, "name": "手撕包菜", "category": "家常炒菜"}, {"id": 48, "name": "毛豆炒肉丝", "category": "家常炒菜"}, {"id": 49, "name": "清炒芥兰", "category": "家常炒菜"}, {"id": 50, "name": "番茄炒牛肉", "category": "家常炒菜"}, {"id": 51, "name": "白灼菜心", "category": "家常炒菜"}, {"id": 52, "name": "腐乳通菜", "category": "家常炒菜"}, {"id": 53, "name": "茭白炒肉丝", "category": "家常炒菜"}, {"id": 54, "name": "蒜蓉空心菜", "category": "家常炒菜"}, {"id": 55, "name": "蚝油生菜", "category": "家常炒菜"}, {"id": 56, "name": "辣椒炒肉", "category": "家常炒菜"}, {"id": 57, "name": "醋溜白菜", "category": "家常炒菜"}, {"id": 58, "name": "雪菜炒毛豆", "category": "家常炒菜"}, {"id": 59, "name": "香干炒芹菜", "category": "家常炒菜"}, {"id": 60, "name": "鱼香肉丝", "category": "家常炒菜"}, {"id": 61, "name": "上汤娃娃菜", "category": "家常炒菜"}, {"id": 62, "name": "八宝辣酱", "category": "家常炒菜"}, {"id": 63, "name": "咕噜肉", "category": "家常炒菜"}, {"id": 64, "name": "咸蛋蒸肉饼", "category": "家常炒菜"}, {"id": 65, "name": "四喜烤麸", "category": "家常炒菜"}, {"id": 66, "name": "小炒黄牛肉", "category": "家常炒菜"}, {"id": 67, "name": "干煸四季豆", "category": "家常炒菜"}, {"id": 68, "name": "椒盐豆腐", "category": "家常炒菜"}, {"id": 69, "name": "梅菜蒸肉饼", "category": "广府家常菜"}, {"id": 70, "name": "清蒸水蛋", "category": "广府家常菜"}, {"id": 71, "name": "白灼虾", "category": "广府家常菜"}, {"id": 72, "name": "菜心炒牛肉", "category": "广府家常菜"}, {"id": 73, "name": "豉汁蒸排骨", "category": "广府家常菜"}, {"id": 74, "name": "酿豆腐", "category": "广府家常菜"}, {"id": 75, "name": "丝瓜炒牛肉", "category": "广府家常菜"}, {"id": 76, "name": "凉瓜炒牛肉", "category": "广府家常菜"}, {"id": 77, "name": "咸鱼茄煲", "category": "广府家常菜"}, {"id": 78, "name": "姜葱炒牛肉", "category": "广府家常菜"}, {"id": 79, "name": "姜葱焗鱼", "category": "广府家常菜"}, {"id": 80, "name": "清蒸九节虾", "category": "广府家常菜"}, {"id": 81, "name": "清蒸海鱼", "category": "广府家常菜"}, {"id": 82, "name": "烧肉炒芥兰", "category": "广府家常菜"}, {"id": 83, "name": "煎酿三宝", "category": "广府家常菜"}, {"id": 84, "name": "云吞面", "category": "广式粥粉面"}, {"id": 85, "name": "干炒牛河", "category": "广式粥粉面"}, {"id": 86, "name": "柴鱼花生粥", "category": "广式粥粉面"}, {"id": 87, "name": "桂林米粉", "category": "广式粥粉面"}, {"id": 88, "name": "湿炒牛河", "category": "广式粥粉面"}, {"id": 89, "name": "牛腩面", "category": "广式粥粉面"}, {"id": 90, "name": "猪杂汤粉", "category": "广式粥粉面"}, {"id": 91, "name": "猪肠粉", "category": "广式粥粉面"}, {"id": 92, "name": "生滚牛肉粥", "category": "广式粥粉面"}, {"id": 93, "name": "生滚鱼片粥", "category": "广式粥粉面"}, {"id": 94, "name": "酸辣粉", "category": "广式粥粉面"}, {"id": 95, "name": "星洲炒米粉", "category": "广式粥粉面"}, {"id": 96, "name": "海鲜砂锅粥", "category": "广式粥粉面"}, {"id": 97, "name": "潮汕牛肉丸粉", "category": "广式粥粉面"}, {"id": 98, "name": "濑粉", "category": "广式粥粉面"}, {"id": 99, "name": "猪红粥", "category": "广式粥粉面"}, {"id": 100, "name": "碗仔翅", "category": "广式粥粉面"}, {"id": 101, "name": "豉油皇炒面", "category": "广式粥粉面"}, {"id": 102, "name": "车仔面", "category": "广式粥粉面"}, {"id": 103, "name": "陈村粉", "category": "广式粥粉面"}, {"id": 104, "name": "叉烧包", "category": "早茶点心"}, {"id": 105, "name": "干蒸烧卖", "category": "早茶点心"}, {"id": 106, "name": "肠粉(早茶)", "category": "早茶点心"}, {"id": 107, "name": "虾饺", "category": "早茶点心"}, {"id": 108, "name": "凤爪", "category": "早茶点心"}, {"id": 109, "name": "奶黄包", "category": "早茶点心"}, {"id": 110, "name": "流沙包", "category": "早茶点心"}, {"id": 111, "name": "炸春卷", "category": "早茶点心"}, {"id": 112, "name": "白糖糕", "category": "早茶点心"}, {"id": 113, "name": "糯米鸡", "category": "早茶点心"}, {"id": 114, "name": "腐皮卷", "category": "早茶点心"}, {"id": 115, "name": "莲蓉包", "category": "早茶点心"}, {"id": 116, "name": "马拉糕", "category": "早茶点心"}, {"id": 117, "name": "上海生煎包", "category": "早餐粥点"}, {"id": 118, "name": "南翔小笼包", "category": "早餐粥点"}, {"id": 119, "name": "及第粥", "category": "早餐粥点"}, {"id": 120, "name": "咸豆浆", "category": "早餐粥点"}, {"id": 121, "name": "明火白粥", "category": "早餐粥点"}, {"id": 122, "name": "油条", "category": "早餐粥点"}, {"id": 123, "name": "甜豆浆", "category": "早餐粥点"}, {"id": 124, "name": "白粥配咸菜", "category": "早餐粥点"}, {"id": 125, "name": "皮蛋瘦肉粥(珠三角)", "category": "早餐粥点"}, {"id": 126, "name": "粢饭团", "category": "早餐粥点"}, {"id": 127, "name": "糯米烧卖", "category": "早餐粥点"}, {"id": 128, "name": "肠粉", "category": "早餐粥点"}, {"id": 129, "name": "艇仔粥", "category": "早餐粥点"}, {"id": 130, "name": "菜肉大馄饨", "category": "早餐粥点"}, {"id": 131, "name": "豆腐花", "category": "早餐粥点"}, {"id": 132, "name": "鲜肉小馄饨", "category": "早餐粥点"}, {"id": 133, "name": "鲜肉烧卖", "category": "早餐粥点"}, {"id": 134, "name": "千层油糕", "category": "早餐粥点"}, {"id": 135, "name": "叉烧酥", "category": "早餐粥点"}, {"id": 136, "name": "咖喱牛肉汤", "category": "早餐粥点"}, {"id": 137, "name": "咸水角", "category": "早餐粥点"}, {"id": 138, "name": "嘉兴鲜肉粽", "category": "早餐粥点"}, {"id": 139, "name": "扬州三丁包", "category": "早餐粥点"}, {"id": 140, "name": "条头糕", "category": "早餐粥点"}, {"id": 141, "name": "炸两", "category": "早餐粥点"}, {"id": 142, "name": "芋头糕", "category": "早餐粥点"}, {"id": 143, "name": "上海熏鱼", "category": "本帮江浙菜"}, {"id": 144, "name": "宁波烤菜", "category": "本帮江浙菜"}, {"id": 145, "name": "油焖笋", "category": "本帮江浙菜"}, {"id": 146, "name": "白斩鸡", "category": "本帮江浙菜"}, {"id": 147, "name": "糖醋排骨", "category": "本帮江浙菜"}, {"id": 148, "name": "红烧狮子头", "category": "本帮江浙菜"}, {"id": 149, "name": "霉干菜烧肉", "category": "本帮江浙菜"}, {"id": 150, "name": "东坡肉", "category": "本帮江浙菜"}, {"id": 151, "name": "凉拌马兰头", "category": "本帮江浙菜"}, {"id": 152, "name": "南京烤鸭", "category": "本帮江浙菜"}, {"id": 153, "name": "无锡酱排骨", "category": "本帮江浙菜"}, {"id": 154, "name": "梅菜扣肉", "category": "本帮江浙菜"}, {"id": 155, "name": "梭子蟹炒年糕", "category": "本帮江浙菜"}, {"id": 156, "name": "水晶虾仁", "category": "本帮江浙菜"}, {"id": 157, "name": "油爆虾", "category": "本帮江浙菜"}, {"id": 158, "name": "清炒虾仁", "category": "本帮江浙菜"}, {"id": 159, "name": "打边炉", "category": "火锅麻辣烫"}, {"id": 160, "name": "椰子鸡火锅", "category": "火锅麻辣烫"}, {"id": 161, "name": "水煮鱼", "category": "火锅麻辣烫"}, {"id": 162, "name": "潮汕牛肉火锅", "category": "火锅麻辣烫"}, {"id": 163, "name": "烤鱼", "category": "火锅麻辣烫"}, {"id": 164, "name": "酸菜鱼", "category": "火锅麻辣烫"}, {"id": 165, "name": "串串香", "category": "火锅麻辣烫"}, {"id": 166, "name": "冷锅串串", "category": "火锅麻辣烫"}, {"id": 167, "name": "四川麻辣香锅", "category": "火锅麻辣烫"}, {"id": 168, "name": "小龙虾", "category": "火锅麻辣烫"}, {"id": 169, "name": "烤生蚝", "category": "火锅麻辣烫"}, {"id": 170, "name": "牛杂火锅", "category": "火锅麻辣烫"}, {"id": 171, "name": "猪肚鸡", "category": "火锅麻辣烫"}, {"id": 172, "name": "卤蛋", "category": "烧烤小吃"}, {"id": 173, "name": "卤鸡爪", "category": "烧烤小吃"}, {"id": 174, "name": "沙县扁肉", "category": "烧烤小吃"}, {"id": 175, "name": "沙县拌面", "category": "烧烤小吃"}, {"id": 176, "name": "炒年糕", "category": "烧烤小吃"}, {"id": 177, "name": "炒面", "category": "烧烤小吃"}, {"id": 178, "name": "炸串", "category": "烧烤小吃"}, {"id": 179, "name": "炸鸡", "category": "烧烤小吃"}, {"id": 180, "name": "炸鸡排", "category": "烧烤小吃"}, {"id": 181, "name": "煎饺", "category": "烧烤小吃"}, {"id": 182, "name": "煎饼果子", "category": "烧烤小吃"}, {"id": 183, "name": "薯条", "category": "烧烤小吃"}, {"id": 184, "name": "锅贴", "category": "烧烤小吃"}, {"id": 185, "name": "鸡蛋灌饼", "category": "烧烤小吃"}, {"id": 186, "name": "卤味拼盘", "category": "烧烤小吃"}, {"id": 187, "name": "手抓饼", "category": "烧烤小吃"}, {"id": 188, "name": "沙县蒸饺", "category": "烧烤小吃"}, {"id": 189, "name": "烤玉米", "category": "烧烤小吃"}, {"id": 190, "name": "烤金针菇", "category": "烧烤小吃"}, {"id": 191, "name": "烤韭菜", "category": "烧烤小吃"}, {"id": 192, "name": "爆米花", "category": "烧烤小吃"}, {"id": 193, "name": "盐酥鸡", "category": "烧烤小吃"}, {"id": 194, "name": "臭豆腐", "category": "烧烤小吃"}, {"id": 195, "name": "卤水鸡翅", "category": "烧腊卤味"}, {"id": 196, "name": "烧鸭", "category": "烧腊卤味"}, {"id": 197, "name": "烧鹅", "category": "烧腊卤味"}, {"id": 198, "name": "牛杂", "category": "烧腊卤味"}, {"id": 199, "name": "白切鸡", "category": "烧腊卤味"}, {"id": 200, "name": "脆皮烧肉", "category": "烧腊卤味"}, {"id": 201, "name": "蜜汁叉烧", "category": "烧腊卤味"}, {"id": 202, "name": "豉油鸡", "category": "烧腊卤味"}, {"id": 203, "name": "卤水拼盘", "category": "烧腊卤味"}, {"id": 204, "name": "卤水掌翼", "category": "烧腊卤味"}, {"id": 205, "name": "卤水豆腐", "category": "烧腊卤味"}, {"id": 206, "name": "卤水鸭掌", "category": "烧腊卤味"}, {"id": 207, "name": "手撕鸡", "category": "烧腊卤味"}, {"id": 208, "name": "柱候牛腩", "category": "烧腊卤味"}, {"id": 209, "name": "清汤牛腩", "category": "烧腊卤味"}, {"id": 210, "name": "盐焗鸡", "category": "烧腊卤味"}, {"id": 211, "name": "金钱肚", "category": "烧腊卤味"}, {"id": 212, "name": "叉烧饭", "category": "煲仔饭碟头饭"}, {"id": 213, "name": "咸肉菜饭", "category": "煲仔饭碟头饭"}, {"id": 214, "name": "扬州炒饭", "category": "煲仔饭碟头饭"}, {"id": 215, "name": "油鸡饭", "category": "煲仔饭碟头饭"}, {"id": 216, "name": "烧腊双拼饭", "category": "煲仔饭碟头饭"}, {"id": 217, "name": "烧鹅饭", "category": "煲仔饭碟头饭"}, {"id": 218, "name": "猪脚饭", "category": "煲仔饭碟头饭"}, {"id": 219, "name": "腊味煲仔饭", "category": "煲仔饭碟头饭"}, {"id": 220, "name": "菜泡饭", "category": "煲仔饭碟头饭"}, {"id": 221, "name": "豉油鸡饭", "category": "煲仔饭碟头饭"}, {"id": 222, "name": "隆江猪脚饭", "category": "煲仔饭碟头饭"}, {"id": 223, "name": "隆江猪脚饭(快餐)", "category": "煲仔饭碟头饭"}, {"id": 224, "name": "北菇滑鸡饭", "category": "煲仔饭碟头饭"}, {"id": 225, "name": "叉烧煎蛋饭", "category": "煲仔饭碟头饭"}, {"id": 226, "name": "海南鸡饭", "category": "煲仔饭碟头饭"}, {"id": 227, "name": "滑鸡煲仔饭", "category": "煲仔饭碟头饭"}, {"id": 228, "name": "猪油拌饭", "category": "煲仔饭碟头饭"}, {"id": 229, "name": "窝蛋牛肉煲仔饭", "category": "煲仔饭碟头饭"}, {"id": 230, "name": "窝蛋牛肉饭", "category": "煲仔饭碟头饭"}, {"id": 231, "name": "菜饭骨头汤", "category": "煲仔饭碟头饭"}, {"id": 232, "name": "豉汁排骨煲仔饭", "category": "煲仔饭碟头饭"}, {"id": 233, "name": "双皮奶", "category": "糖水甜品"}, {"id": 234, "name": "杨枝甘露", "category": "糖水甜品"}, {"id": 235, "name": "海带绿豆沙", "category": "糖水甜品"}, {"id": 236, "name": "番薯糖水", "category": "糖水甜品"}, {"id": 237, "name": "绿豆沙", "category": "糖水甜品"}, {"id": 238, "name": "芝麻糊", "category": "糖水甜品"}, {"id": 239, "name": "菠萝包", "category": "糖水甜品"}, {"id": 240, "name": "菠萝油", "category": "糖水甜品"}, {"id": 241, "name": "蛋挞", "category": "糖水甜品"}, {"id": 242, "name": "陈皮红豆沙", "category": "糖水甜品"}, {"id": 243, "name": "姜撞奶", "category": "糖水甜品"}, {"id": 244, "name": "定胜糕", "category": "糖水甜品"}, {"id": 245, "name": "木瓜炖雪耳", "category": "糖水甜品"}, {"id": 246, "name": "核桃糊", "category": "糖水甜品"}, {"id": 247, "name": "桂花糖芋艿", "category": "糖水甜品"}, {"id": 248, "name": "炖蛋", "category": "糖水甜品"}, {"id": 249, "name": "红豆冰", "category": "糖水甜品"}, {"id": 250, "name": "腐竹白果薏米糖水", "category": "糖水甜品"}, {"id": 251, "name": "芒果班戟", "category": "糖水甜品"}, {"id": 252, "name": "例汤", "category": "老火汤羹"}, {"id": 253, "name": "冬瓜排骨汤", "category": "老火汤羹"}, {"id": 254, "name": "冬瓜薏米猪骨汤", "category": "老火汤羹"}, {"id": 255, "name": "玉米胡萝卜排骨汤", "category": "老火汤羹"}, {"id": 256, "name": "番茄蛋花汤", "category": "老火汤羹"}, {"id": 257, "name": "紫菜蛋花汤", "category": "老火汤羹"}, {"id": 258, "name": "西洋菜猪骨汤", "category": "老火汤羹"}, {"id": 259, "name": "霸王花猪骨汤", "category": "老火汤羹"}, {"id": 260, "name": "青红萝卜猪骨汤", "category": "老火汤羹"}, {"id": 261, "name": "山药排骨汤", "category": "老火汤羹"}, {"id": 262, "name": "椰子鸡汤", "category": "老火汤羹"}, {"id": 263, "name": "清补凉鸡汤", "category": "老火汤羹"}, {"id": 264, "name": "火腿冬瓜汤", "category": "老火汤羹"}, {"id": 265, "name": "竹蔗茅根猪骨汤", "category": "老火汤羹"}, {"id": 266, "name": "笋干老鸭煲", "category": "老火汤羹"}, {"id": 267, "name": "粉葛鲮鱼汤", "category": "老火汤羹"}, {"id": 268, "name": "罗宋汤", "category": "老火汤羹"}, {"id": 269, "name": "老鸭汤", "category": "老火汤羹"}, {"id": 270, "name": "寿司拼盘", "category": "西式简餐"}, {"id": 271, "name": "日式咖喱饭", "category": "西式简餐"}, {"id": 272, "name": "牛肉盖饭", "category": "西式简餐"}, {"id": 273, "name": "芝士汉堡", "category": "西式简餐"}, {"id": 274, "name": "三文鱼刺身", "category": "西式简餐"}, {"id": 275, "name": "凯撒鸡肉卷", "category": "西式简餐"}, {"id": 276, "name": "奶油培根意面", "category": "西式简餐"}, {"id": 277, "name": "奶油蘑菇汤", "category": "西式简餐"}, {"id": 278, "name": "帕尼尼", "category": "西式简餐"}, {"id": 279, "name": "海鲜披萨", "category": "西式简餐"}, {"id": 280, "name": "炸猪排饭", "category": "西式简餐"}, {"id": 281, "name": "炸鱼薯条", "category": "西式简餐"}, {"id": 282, "name": "炸鸡汉堡", "category": "西式简餐"}, {"id": 283, "name": "丝袜奶茶", "category": "轻食健康"}, {"id": 284, "name": "冻柠茶", "category": "轻食健康"}, {"id": 285, "name": "奶茶", "category": "轻食健康"}, {"id": 286, "name": "拿铁", "category": "轻食健康"}, {"id": 287, "name": "水煮时蔬", "category": "轻食健康"}, {"id": 288, "name": "珍珠奶茶", "category": "轻食健康"}, {"id": 289, "name": "美式咖啡", "category": "轻食健康"}, {"id": 290, "name": "凯撒沙拉", "category": "轻食健康"}, {"id": 291, "name": "波奇饭", "category": "轻食健康"}, {"id": 292, "name": "藜麦鸡胸沙拉", "category": "轻食健康"}, {"id": 293, "name": "鲜榨橙汁", "category": "轻食健康"}, {"id": 294, "name": "上海大排面", "category": "长三角粉面"}, {"id": 295, "name": "上海辣肉面", "category": "长三角粉面"}, {"id": 296, "name": "上海阳春面", "category": "长三角粉面"}, {"id": 297, "name": "杭州片儿川", "category": "长三角粉面"}, {"id": 298, "name": "苏州奥灶面", "category": "长三角粉面"}, {"id": 299, "name": "葱油拌面", "category": "长三角粉面"}, {"id": 300, "name": "雪菜肉丝面", "category": "长三角粉面"}, {"id": 301, "name": "上海冷面", "category": "长三角粉面"}, {"id": 302, "name": "上海大肠面", "category": "长三角粉面"}, {"id": 303, "name": "上海炒面", "category": "长三角粉面"}, {"id": 304, "name": "上海烂糊面", "category": "长三角粉面"}, {"id": 305, "name": "两面黄", "category": "长三角粉面"}, {"id": 306, "name": "南京皮肚面", "category": "长三角粉面"}, {"id": 307, "name": "南京老卤面", "category": "长三角粉面"}, {"id": 308, "name": "双浇面", "category": "长三角粉面"}, {"id": 309, "name": "开洋葱油拌面", "category": "长三角粉面"}, {"id": 310, "name": "可颂", "category": "面包甜点"}, {"id": 311, "name": "吐司配果酱", "category": "面包甜点"}, {"id": 312, "name": "火腿芝士三明治", "category": "面包甜点"}, {"id": 313, "name": "牛油果吐司", "category": "面包甜点"}, {"id": 314, "name": "瑞士卷", "category": "面包甜点"}, {"id": 315, "name": "蛋卷", "category": "面包甜点"}, {"id": 316, "name": "蛋糕卷", "category": "面包甜点"}], "presets": {"深夜加班": {"time_slot": "夜宵", "hunger": 5, "available_time": 25, "budget": "正常", "mood": "疲惫", "weather": "冷", "companion": "一个人", "health_goal": "不关心", "spicy_tol": "中辣", "taboo": ""}, "工作日午餐": {"time_slot": "午餐", "hunger": 4, "available_time": 40, "budget": "正常", "mood": "一般", "weather": "晴", "companion": "同事", "health_goal": "随便", "spicy_tol": "微辣", "taboo": ""}, "周末朋友聚餐": {"time_slot": "晚餐", "hunger": 5, "available_time": 100, "budget": "想吃好点", "mood": "开心", "weather": "晴", "companion": "朋友", "health_goal": "不关心", "spicy_tol": "中辣", "taboo": ""}, "减脂期午餐": {"time_slot": "午餐", "hunger": 3, "available_time": 30, "budget": "正常", "mood": "一般", "weather": "热", "companion": "一个人", "health_goal": "严格控制", "spicy_tol": "微辣", "taboo": ""}, "约会晚餐": {"time_slot": "晚餐", "hunger": 4, "available_time": 90, "budget": "不差钱", "mood": "开心", "weather": "晴", "companion": "约会", "health_goal": "不关心", "spicy_tol": "不吃辣", "taboo": ""}, "预算紧张": {"time_slot": "午餐", "hunger": 4, "available_time": 30, "budget": "省着点", "mood": "低落", "weather": "阴", "companion": "一个人", "health_goal": "不关心", "spicy_tol": "不吃辣", "taboo": ""}, "感冒没胃口": {"time_slot": "晚餐", "hunger": 2, "available_time": 60, "budget": "正常", "mood": "疲惫", "weather": "冷", "companion": "家人", "health_goal": "想健康", "spicy_tol": "不吃辣", "taboo": ""}, "下午犯困": {"time_slot": "下午加餐", "hunger": 2, "available_time": 15, "budget": "正常", "mood": "疲惫", "weather": "阴", "companion": "一个人", "health_goal": "想健康", "spicy_tol": "微辣", "taboo": ""}, "早起赶时间": {"time_slot": "早餐", "hunger": 3, "available_time": 15, "budget": "省着点", "mood": "一般", "weather": "冷", "companion": "一个人", "health_goal": "不关心", "spicy_tol": "不吃辣", "taboo": ""}, "海鲜过敏": {"time_slot": "晚餐", "hunger": 4, "available_time": 60, "budget": "想吃好点", "mood": "开心", "weather": "雨", "companion": "家人", "health_goal": "随便", "spicy_tol": "中辣", "taboo": "海鲜"}}, "stats": {"n_dishes": 317, "n_categories": 18, "n_scenarios": 2000, "n_rows": 7340}};</script>
+<script>
+let META=null, ST={}, EX=new Set();
+
+function el(t,c,h){const e=document.createElement(t); if(c)e.className=c;
+  if(h!==undefined)e.innerHTML=h; return e;}
+
+async function boot(){
+  META = __SNAP_META__;
+  ST = {...META.presets['深夜加班']};
+  const s = META.stats;
+  document.getElementById('stats').textContent =
+    `${s.n_dishes} 道菜 / ${s.n_categories} 个品类 · 训练自 ${s.n_scenarios} 个情境、${s.n_rows} 条记录`;
+
+  // 预设
+  const pv = document.getElementById('presets');
+  Object.keys(META.presets).forEach(name=>{
+    const b = el('button',null,name);
+    b.onclick = ()=>{ ST = {...META.presets[name]}; render(); run(); };
+    pv.appendChild(b);
+  });
+
+  // 表单
+  const form = document.getElementById('form');
+  META.fields.forEach(f=>{
+    const box = el('div','field');
+    box.appendChild(el('label',null,f.label));
+    if(f.key==='available_time'){
+      const r = el('input'); r.type='range'; r.min=5; r.max=150; r.step=5;
+      r.value = ST[f.key] ?? 45;
+      const rv = el('div','rowv');
+      const v1 = el('span'); const v2 = el('span','big', r.value+' 分钟');
+      rv.appendChild(v1); rv.appendChild(v2);
+      r.oninput = ()=>{ ST[f.key]=+r.value; v2.textContent = r.value+' 分钟'; };
+      box.appendChild(r); box.appendChild(rv);
+    } else if(f.key==='hunger'){
+      const seg = el('div','seg');
+      f.options.forEach(o=>{
+        const b = el('button',null,o);
+        if(String(ST[f.key])===o) b.classList.add('on');
+        b.onclick = ()=>{ ST[f.key]=+o;
+          [...seg.children].forEach(x=>x.classList.remove('on')); b.classList.add('on'); };
+        seg.appendChild(b);
+      });
+      box.appendChild(seg);
+    } else {
+      const seg = el('div','seg');
+      const opts = (f.key==='taboo') ? ['', ...f.options.filter(x=>x)] : f.options;
+      opts.forEach(o=>{
+        const b = el('button',null,o===''?'无忌口':o);
+        if((ST[f.key]??'')===o) b.classList.add('on');
+        b.onclick = ()=>{ ST[f.key]=o;
+          [...seg.children].forEach(x=>x.classList.remove('on')); b.classList.add('on'); };
+        seg.appendChild(b);
+      });
+      box.appendChild(seg);
+    }
+    form.appendChild(box);
+  });
+
+  // 菜品排除
+  const chips = document.getElementById('chips');
+  META.dishes.forEach(d=>{
+    const b = el('button',null,d.name);
+    b.dataset.name = d.name;
+    b.onclick = ()=>{
+      if(EX.has(d.name)){ EX.delete(d.name); b.classList.remove('rm'); }
+      else { EX.add(d.name); b.classList.add('rm'); }
+    };
+    chips.appendChild(b);
+  });
+
+  document.getElementById('go').onclick = ()=>{};
+  render();
+}
+
+function render(){
+  // 让表单控件与 ST 同步（换预设时用）
+  document.querySelectorAll('#form .field').forEach((box,i)=>{
+    const f = META.fields[i];
+    if(f.key==='available_time'){
+      const r = box.querySelector('input');
+      r.value = ST[f.key] ?? 45;
+      box.querySelector('.big').textContent = r.value+' 分钟';
+    } else {
+      const seg = box.querySelector('.seg');
+      [...seg.children].forEach(b=>b.classList.remove('on'));
+      const opts = (f.key==='taboo') ? ['', ...f.options.filter(x=>x)] : f.options;
+      const cur = String(ST[f.key] ?? (f.key==='hunger'?3:opts[0]));
+      const idx = opts.findIndex(o=>String(o)===cur);
+      if(idx>=0) seg.children[idx].classList.add('on');
+    }
+  });
+}
+
+// 供自动化截图/联调使用：外部页面可用 postMessage({type:'autorun'}) 直接触发一次推荐。
+// 正常浏览器访问不会用到这条路径，不影响手动操作。
+window.addEventListener('message', ev=>{
+  const m = ev.data;
+  if(m && m.type === 'autorun'){
+    if(m.preset && META.presets[m.preset]) ST = {...META.presets[m.preset]};
+    if(m.fill) Object.assign(ST, m.fill);
+    render(); run();
+  }
+});
+
+async function run(){
+  const btn = document.getElementById('go');
+  const out = document.getElementById('out');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>正在算…';
+  try{
+    const res = await fetch('/api/predict',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({...ST, exclude:[...EX], topk:5})});
+    const d = await res.json();
+    if(d.error) throw new Error(d.error);
+    draw(d);
+  }catch(e){
+    out.innerHTML = '<div class="empty">出错了：'+e.message+'</div>';
+  }finally{
+    btn.disabled=false; btn.textContent='给我推荐';
+  }
+}
+
+function draw(d){
+  const out = document.getElementById('out');
+  out.innerHTML='';
+  const bar = (p)=>{const w=Math.max(6,Math.round(p*130));
+    return `<span class="bar" style="width:${w}px"></span>`;};
+  const cu = el('div','cuisine');
+  cu.innerHTML = '第一层判断： ' + d.cuisine_top.map(c=>
+    `${bar(c.prob)}<b>${c.name}</b> ${(c.prob*100).toFixed(0)}%`).join(' &nbsp;&nbsp; ');
+  out.appendChild(cu);
+
+  const t = d.items[0];
+  const pick = el('div','pick');
+  pick.innerHTML = `<div class="name">${t.dish_name}</div>
+    <div class="meta">${t.category} · ${t.price} 元 · ${t.time_cost} 分钟</div>
+    <div class="why">为什么：${t.reason}</div>`;
+  out.appendChild(pick);
+
+  d.items.slice(1).forEach(x=>{
+    const a = el('div','alt');
+    a.innerHTML = `<div><b>第{x.rank}名 · ${x.dish_name}</b>
+        <span class="tag">· ${x.category} · ${x.price}元 · ${x.reason}</span></div>`;
+    out.appendChild(a);
+  });
+
+  // 展开：把品类内所有候选的原始打分都列出来，不做任何美化
+  const det = el('details');
+  det.innerHTML = '<summary>看模型给每道菜的原始打分（不美化）</summary>' +
+    '<div class="fine">分数是模型学出来的效用预测值，<b>只能在同一品类内横向比较</b>，' +
+    '跨品类没有可比性（这是两层结构的特点）。同一品类内分数越接近，说明这几道菜' +
+    '本来就差不多，随便挑一个都行。</div>' +
+    '<table class="raw"><tr><th>菜</th><th>分数</th></tr>' +
+    d.all_scores.map(s=>`<tr><td>${s.dish_name}</td><td>${s.score.toFixed(3)}</td></tr>`).join('') +
+    '</table>';
+  out.appendChild(det);
+
+  if(d.truth){
+    out.appendChild(el('div','truth',
+      `对照：规则下的最优是「${d.truth.best_dish}」(效用 ${d.truth.best_possible})，
+       本次首推效用 ${d.truth.model_top1_utility}。效用是 0~1 的连续值。`));
+  }
+  if(d.excluded) out.appendChild(el('div','fine',`已排除 ${d.excluded} 道菜`));
+}
+
+boot();
+</script>
+
+
+</body></html>

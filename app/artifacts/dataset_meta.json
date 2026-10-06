@@ -1,0 +1,68 @@
+{
+  "seed": 20240617,
+  "n_scenarios": 2000,
+  "samples_per_scenario": 3,
+  "n_dishes": 317,
+  "categories": [
+    "中式快餐盖饭",
+    "家常炒菜",
+    "广府家常菜",
+    "广式粥粉面",
+    "早茶点心",
+    "早餐粥点",
+    "本帮江浙菜",
+    "火锅麻辣烫",
+    "烧烤小吃",
+    "烧腊卤味",
+    "煲仔饭碟头饭",
+    "糖水甜品",
+    "老火汤羹",
+    "西式简餐",
+    "轻食健康",
+    "长三角粉面",
+    "面包甜点",
+    "面食粉面"
+  ],
+  "n_samples": 7340,
+  "split_counts": {
+    "train": 5180,
+    "test": 1127,
+    "val": 1033
+  },
+  "scenario_split_counts": {
+    "train": 1408,
+    "test": 309,
+    "val": 283
+  },
+  "shift_counts": {
+    "normal": 728,
+    "snow": 399
+  },
+  "context_fields": [
+    "time_slot",
+    "hunger",
+    "available_time",
+    "budget",
+    "mood",
+    "weather",
+    "companion",
+    "health_goal",
+    "spicy_tol",
+    "taboo"
+  ],
+  "dish_fields": [
+    "category",
+    "time_cost",
+    "price",
+    "spicy",
+    "heavy",
+    "healthy",
+    "temperature",
+    "carb",
+    "protein"
+  ],
+  "source_counts": {
+    "chosen": 6000,
+    "considered": 1340
+  }
+}
