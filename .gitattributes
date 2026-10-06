@@ -1,2 +1,14 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# ---- Windows 启动脚本：必须保持 CRLF ----
+# 这些 .bat / .vbs 由 cmd.exe / wscript 直接执行，LF-only 换行会让 cmd.exe
+# 把多行粘成一行（报出 "936 is not recognized" 之类的怪错）。
+# 显式声明 eol=crlf，保证任何人 clone / checkout 后拿到的都还是 CRLF。
+*.bat text eol=crlf
+*.vbs text eol=crlf
+
+# ---- 二进制产物：不要当文本处理 ----
+*.npy binary
+*.npz binary
+*.png binary
