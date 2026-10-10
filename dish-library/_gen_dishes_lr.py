@@ -517,109 +517,114 @@ add("牛肉盖饭", "西式简餐", C, 15, 38, 0, 4, 3, 2, 5, 4, "麸质", 0, A,
 add("鸡肉卷饼", "西式简餐", C, 10, 28, 0, 3, 3, 1, 5, 3, "麸质", 0, "早餐/午餐/下午加餐", 2)
 
 # ============================================================ 输出
-df = pd.DataFrame(R)
+# 注意：以下裁剪/写盘逻辑只在直接运行时执行。
+# _gen_dishes_cn3.py 会 import 本模块复用 R（全部 448 道菜，含被裁掉的那批），
+# 所以这里必须有 __main__ 守卫，否则 import 时就会被裁剪并写盘。
+def _finalize_and_write():
+    df = pd.DataFrame(R)
 
-# ---- 频次归一化：按两地调研结论校正「名菜 ≠ 日常菜」----
-# 依据（见交付说明）：浙菜「西湖醋鱼/宋嫂鱼羹/龙井虾仁/清汤越鸡」
-# 为饭店菜而非家常菜；广府 A 级（几乎天天可遇）与 C 级（节庆/宴席）分级。
-_DEMOTE = {
-    # 长三角：宴席/饭店/时令稀缺 → 偶尔
-    "清蒸大闸蟹", "八宝鸭", "叫花鸡", "叫花童鸡(杭州)", "松江鲈鱼", "红烧鮰鱼",
-    "草头圈子", "扣三丝", "糟钵头", "素蟹粉", "松鼠桂鱼", "碧螺虾仁",
-    "莼菜银鱼羹", "天目湖砂锅鱼头", "蟹粉狮子头", "清炖狮子头", "符离集烧鸡",
-    "常州天目湖砂锅鱼头", "响油鳝糊", "醉蟹", "醉泥螺", "宁波咸蟹",
-    "雪菜大汤黄鱼", "黄山臭鳜鱼", "梁溪脆鳝", "沛县狗肉", "徐州把子肉",
-    # 珠三角：C 级节庆/宴席
-    "烧乳鸽", "卤水鹅", "烤乳猪", "避风塘炒蟹", "姜葱炒蟹", "上汤焗龙虾",
-    "清蒸大闸蟹", "顺德鱼生", "桑拿鱼", "煎酿鲮鱼", "煎焗鱼嘴", "均安蒸猪",
-    "大良炒鲜奶", "八宝冬瓜盅", "一品煲", "脆皮烧腩仔",
-    # 稀见地方变体 → 偶尔
-    "面结面", "宁波仓桥面结面", "温州清江三鲜面", "台州跳鱼捞面", "嵊州榨面",
-    "衢州常山索面", "绍兴次坞打面", "湖州南浔双交面", "嘉兴桐乡羊肉面",
-    "镇江锅盖面", "东台鱼汤面", "常州银丝面", "苏州三虾面", "枫镇大肉面",
-    "常熟蕈油面", "扬州饺面", "徐州羊肉面",
-}
-# 广府 A 级（几乎天天可遇）→ 提到日常高频
-_PROMOTE = {
-    "白切鸡(广式)", "蜜汁叉烧", "豉汁蒸排骨", "白灼菜心", "肠粉", "云吞面",
-    "番薯糖水", "番茄炒蛋", "清蒸鲈鱼", "蒜蓉空心菜", "冬瓜薏米猪骨汤",
-    "老火汤羹", "青椒肉丝", "蒜蓉粉丝蒸扇贝", "蒜蓉炒通菜", "腐乳通菜",
-    "紫菜蛋花汤", "番茄蛋花汤", "蒜蓉空心菜", "耗油生菜", "蚝油生菜",
-    "清蒸水蛋", "瘦肉粥", "皮蛋瘦肉粥", "扬州炒饭", "腊味煲仔饭",
-    "干炒牛河", "猪肠粉", "虾饺", "干蒸烧卖", "叉烧包", "蛋挞",
-    "菠萝包", "例汤", "冬瓜排骨汤", "玉米胡萝卜排骨汤", "紫菜蛋花汤",
-}
-# 珠三角：日常但频率被低估的糖水/凉茶 → 保留为常吃（不改动）
-df.loc[df.dish_name.isin(_DEMOTE), "frequency"] = 1
-df.loc[df.dish_name.isin(_PROMOTE), "frequency"] = 3
+    # ---- 频次归一化：按两地调研结论校正「名菜 ≠ 日常菜」----
+    # 依据（见交付说明）：浙菜「西湖醋鱼/宋嫂鱼羹/龙井虾仁/清汤越鸡」
+    # 为饭店菜而非家常菜；广府 A 级（几乎天天可遇）与 C 级（节庆/宴席）分级。
+    _DEMOTE = {
+        # 长三角：宴席/饭店/时令稀缺 → 偶尔
+        "清蒸大闸蟹", "八宝鸭", "叫花鸡", "叫花童鸡(杭州)", "松江鲈鱼", "红烧鮰鱼",
+        "草头圈子", "扣三丝", "糟钵头", "素蟹粉", "松鼠桂鱼", "碧螺虾仁",
+        "莼菜银鱼羹", "天目湖砂锅鱼头", "蟹粉狮子头", "清炖狮子头", "符离集烧鸡",
+        "常州天目湖砂锅鱼头", "响油鳝糊", "醉蟹", "醉泥螺", "宁波咸蟹",
+        "雪菜大汤黄鱼", "黄山臭鳜鱼", "梁溪脆鳝", "沛县狗肉", "徐州把子肉",
+        # 珠三角：C 级节庆/宴席
+        "烧乳鸽", "卤水鹅", "烤乳猪", "避风塘炒蟹", "姜葱炒蟹", "上汤焗龙虾",
+        "清蒸大闸蟹", "顺德鱼生", "桑拿鱼", "煎酿鲮鱼", "煎焗鱼嘴", "均安蒸猪",
+        "大良炒鲜奶", "八宝冬瓜盅", "一品煲", "脆皮烧腩仔",
+        # 稀见地方变体 → 偶尔
+        "面结面", "宁波仓桥面结面", "温州清江三鲜面", "台州跳鱼捞面", "嵊州榨面",
+        "衢州常山索面", "绍兴次坞打面", "湖州南浔双交面", "嘉兴桐乡羊肉面",
+        "镇江锅盖面", "东台鱼汤面", "常州银丝面", "苏州三虾面", "枫镇大肉面",
+        "常熟蕈油面", "扬州饺面", "徐州羊肉面",
+    }
+    # 广府 A 级（几乎天天可遇）→ 提到日常高频
+    _PROMOTE = {
+        "白切鸡(广式)", "蜜汁叉烧", "豉汁蒸排骨", "白灼菜心", "肠粉", "云吞面",
+        "番薯糖水", "番茄炒蛋", "清蒸鲈鱼", "蒜蓉空心菜", "冬瓜薏米猪骨汤",
+        "老火汤羹", "青椒肉丝", "蒜蓉粉丝蒸扇贝", "蒜蓉炒通菜", "腐乳通菜",
+        "紫菜蛋花汤", "番茄蛋花汤", "蒜蓉空心菜", "耗油生菜", "蚝油生菜",
+        "清蒸水蛋", "瘦肉粥", "皮蛋瘦肉粥", "扬州炒饭", "腊味煲仔饭",
+        "干炒牛河", "猪肠粉", "虾饺", "干蒸烧卖", "叉烧包", "蛋挞",
+        "菠萝包", "例汤", "冬瓜排骨汤", "玉米胡萝卜排骨汤", "紫菜蛋花汤",
+    }
+    df.loc[df.dish_name.isin(_DEMOTE), "frequency"] = 1
+    df.loc[df.dish_name.isin(_PROMOTE), "frequency"] = 3
 
-# 裁剪到目标规模：保留全部「日常高频」，再按品类配额补足「常吃」，
-# 保证 16 个品类都有足够候选（第二层是在品类内排序，每类至少 12 道）。
-TARGET = 292
-_f2 = df[df.frequency == 2].sort_values(["category", "dish_name"]).copy()
-_f2["_r"] = _f2.groupby("category").cumcount()
-_keep_f2 = _f2[_f2["_r"] < 9].drop(columns="_r")
-dropped = df[df.frequency < 2].dish_name.tolist()
-dropped += _f2[_f2["_r"] >= 9].dish_name.tolist()
-df = pd.concat([df[df.frequency >= 3], _keep_f2]).sort_values(
-    ["category", "frequency", "dish_name"], ascending=[True, False, True]
-).reset_index(drop=True)
-df["dish_id"] = range(len(df))
+    # 裁剪到目标规模：保留全部「日常高频」，再按品类配额补足「常吃」，
+    # 保证每个品类都有足够候选（第二层是在品类内排序，每类至少 12 道）。
+    _f2 = df[df.frequency == 2].sort_values(["category", "dish_name"]).copy()
+    _f2["_r"] = _f2.groupby("category").cumcount()
+    _keep_f2 = _f2[_f2["_r"] < 9].drop(columns="_r")
+    dropped = df[df.frequency < 2].dish_name.tolist()
+    dropped += _f2[_f2["_r"] >= 9].dish_name.tolist()
+    df = pd.concat([df[df.frequency >= 3], _keep_f2]).sort_values(
+        ["category", "frequency", "dish_name"], ascending=[True, False, True]
+    ).reset_index(drop=True)
+    df["dish_id"] = range(len(df))
 
-# ---- meal_slots 校正：炒菜/大菜不该出现在早餐时段 ----
-_NO_BREAKFAST = {
-    "手撕包菜", "清炒芥兰", "清炒越鸡(杭州)", "番茄炒牛肉", "白灼菜心", "腐乳通菜",
-    "蒜蓉空心菜", "蚝油生菜", "辣椒炒肉", "醋溜白菜", "雪菜炒毛豆", "青椒肉丝",
-    "香干炒芹菜", "鱼香肉丝", "麻婆豆腐", "小炒黄牛肉", "清蒸水蛋", "酿豆腐",
-    "豉汁蒸排骨", "菜心炒牛肉", "梅菜蒸肉饼", "咸蛋蒸肉饼", "咕噜肉",
-    "宫保鸡丁", "毛豆炒肉丝", "番茄炒蛋", "上汤娃娃菜",
-    "火腿芝士三明治", "牛油果吐司", "吐司配果酱",
-}
+    # ---- meal_slots 校正：炒菜/大菜不该出现在早餐时段 ----
+    _NO_BREAKFAST = {
+        "手撕包菜", "清炒芥兰", "清炒越鸡(杭州)", "番茄炒牛肉", "白灼菜心", "腐乳通菜",
+        "蒜蓉空心菜", "蚝油生菜", "辣椒炒肉", "醋溜白菜", "雪菜炒毛豆", "青椒肉丝",
+        "香干炒芹菜", "鱼香肉丝", "麻婆豆腐", "小炒黄牛肉", "清蒸水蛋", "酿豆腐",
+        "豉汁蒸排骨", "菜心炒牛肉", "梅菜蒸肉饼", "咸蛋蒸肉饼", "咕噜肉",
+        "宫保鸡丁", "毛豆炒肉丝", "番茄炒蛋", "上汤娃娃菜",
+        "火腿芝士三明治", "牛油果吐司", "吐司配果酱",
+    }
+
+    def _fix_slots(row):
+        if row.dish_name in _NO_BREAKFAST and "早餐" in row.meal_slots:
+            parts = [p for p in row.meal_slots.split("/") if p != "早餐"]
+            return "/".join(parts) if parts else "午餐"
+        return row.meal_slots
+
+    df["meal_slots"] = df.apply(_fix_slots, axis=1)
+
+    df = df[["dish_id", "dish_name", "category", "region", "time_cost", "price", "spicy",
+             "heavy", "healthy", "temperature", "carb", "protein", "taboo", "is_veg",
+             "meal_slots", "frequency"]]
+
+    out = Path(r"C:\Users\123\Desktop\桌面应用\文档\meal-decision\EATWHAT-model"
+               r"\dish-library\dishes_yangtze_pearl_delta.csv")
+    df.to_csv(out, index=False, encoding="utf-8-sig")
+    return df, dropped
 
 
-def _fix_slots(row):
-    if row.dish_name in _NO_BREAKFAST and "早餐" in row.meal_slots:
-        parts = [p for p in row.meal_slots.split("/") if p != "早餐"]
-        return "/".join(parts) if parts else "午餐"
-    return row.meal_slots
+if __name__ == "__main__":
+    df, dropped = _finalize_and_write()
 
+    bad = []
+    names = df.dish_name.tolist()
+    if len(names) != len(set(names)):
+        dup = {n for n in names if names.count(n) > 1}
+        bad.append(f"重名: {sorted(dup)}")
+    for c, lo, hi in [("spicy", 0, 3), ("heavy", 1, 5), ("healthy", 1, 5),
+                      ("temperature", 0, 2), ("carb", 1, 5), ("protein", 1, 5),
+                      ("is_veg", 0, 1), ("frequency", 1, 3)]:
+        if not df[c].between(lo, hi).all():
+            bad.append(f"{c} 越界")
+    if not df.price.between(3, 200).all():
+        bad.append("price 越界")
+    if not df.time_cost.between(3, 130).all():
+        bad.append("time_cost 越界")
 
-df["meal_slots"] = df.apply(_fix_slots, axis=1)
-
-df = df[["dish_id", "dish_name", "category", "region", "time_cost", "price", "spicy",
-         "heavy", "healthy", "temperature", "carb", "protein", "taboo", "is_veg",
-         "meal_slots", "frequency"]]
-
-out = Path(r"C:\Users\123\Desktop\桌面应用\文档\dishes_yangtze_pearl_delta.csv")
-df.to_csv(out, index=False, encoding="utf-8-sig")
-
-# ---- 自检 ----
-bad = []
-names = df.dish_name.tolist()
-if len(names) != len(set(names)):
-    dup = {n for n in names if names.count(n) > 1}
-    bad.append(f"重名: {sorted(dup)}")
-for c, lo, hi in [("spicy", 0, 3), ("heavy", 1, 5), ("healthy", 1, 5),
-                  ("temperature", 0, 2), ("carb", 1, 5), ("protein", 1, 5),
-                  ("is_veg", 0, 1), ("frequency", 1, 3)]:
-    if not df[c].between(lo, hi).all():
-        bad.append(f"{c} 越界")
-if not df.price.between(3, 200).all():
-    bad.append("price 越界")
-if not df.time_cost.between(3, 130).all():
-    bad.append("time_cost 越界")
-
-print(f"总菜品数 : {len(df)}   (已按日常高频裁剪，另有 {len(dropped)} 道宴席/长尾菜未收录)")
-print(f"品类数   : {df.category.nunique()}")
-print(f"自检     : {'通过' if not bad else '失败 ' + '; '.join(bad)}")
-print()
-print(df.groupby("category").size().sort_values(ascending=False).to_string())
-print()
-print(df.region.value_counts().to_string())
-print()
-print(f"纯素     : {int(df.is_veg.sum())} 道")
-print(f"日常高频(frequency=3): {int((df.frequency == 3).sum())} 道")
-print(f"常吃    (frequency=2): {int((df.frequency == 2).sum())} 道")
-print()
-print("裁剪掉的菜名：")
-print("、".join(dropped))
+    print(f"总菜品数 : {len(df)}   (已按日常高频裁剪，另有 {len(dropped)} 道宴席/长尾菜未收录)")
+    print(f"品类数   : {df.category.nunique()}")
+    print(f"自检     : {'通过' if not bad else '失败 ' + '; '.join(bad)}")
+    print()
+    print(df.groupby("category").size().sort_values(ascending=False).to_string())
+    print()
+    print(df.region.value_counts().to_string())
+    print()
+    print(f"纯素     : {int(df.is_veg.sum())} 道")
+    print(f"日常高频(frequency=3): {int((df.frequency == 3).sum())} 道")
+    print(f"常吃    (frequency=2): {int((df.frequency == 2).sum())} 道")
+    print()
+    print("裁剪掉的菜名：")
+    print("、".join(dropped))

@@ -1,12 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-把 dish_id 0..46 的旧库对齐到原 features.py 的数值归一化区间。
+[已被 merge_final.py 取代 —— 保留作为历史记录，不建议再运行]
 
+这是第一轮扩充（长三角+珠三角）时的合并脚本：把模型原有的 47 道菜并入
+dishes_yangtze_pearl_delta.csv，产出当时那个 317 道菜的 dishes.csv。
+
+它的映射表只覆盖长三角/珠三角那一版，没有湘菜/东北菜/川菜，也没有
+「同菜异名归一」与「窄品类归并」两处修正。现在请用 merge_final.py。
+
+原说明：把 dish_id 0..46 的旧库对齐到 features.py 的数值归一化区间。
 旧库 price 最大 98、time_cost 最大 60，都落在 DISH_NUM_RANGE 内；
-本库 price 4~108、time_cost 3~90 略超上界。这里把两个库的
-price / time_cost 统一到 (0,120) / (0,100)，避免归一化特征 >1。
+本库 price 4~108、time_cost 3~90 略超上界，统一到 (0,120) / (0,100)。
 """
 import pandas as pd
+from pathlib import Path
 
 DISCOLS = ["dish_name", "category", "time_cost", "price", "spicy", "heavy",
            "healthy", "temperature", "carb", "protein", "taboo"]
@@ -61,9 +68,11 @@ def load_new(p):
 
 
 def main():
-    base = r"C:\Users\123\Desktop\桌面应用\文档"
-    old = load_old(rf"{base}\meal-decision\artifacts\dishes_47原始备份.csv")
-    new = load_new(rf"{base}\dishes_yangtze_pearl_delta.csv")
+    # 路径改为相对本文件，避免迁移后失效（原来硬编码了 C:\...\meal-decision\...）
+    here = Path(__file__).resolve().parent
+    app = here.parent / "app"
+    old = load_old(app / "artifacts" / "dishes_47原始备份.csv")
+    new = load_new(here / "dishes_yangtze_pearl_delta.csv")
 
     # 旧库里带「+米饭」后缀的条目，与新库的无后缀标准名是同一道菜；
     # 统一改名后由 drop_duplicates(keep="first") 丢弃旧的冗余条目，

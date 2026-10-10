@@ -2,15 +2,17 @@
   "seed": 20240617,
   "n_scenarios": 2000,
   "samples_per_scenario": 3,
-  "n_dishes": 317,
+  "n_dishes": 824,
   "categories": [
-    "中式快餐盖饭",
+    "东北菜",
     "家常炒菜",
+    "川菜",
     "广府家常菜",
     "广式粥粉面",
     "早茶点心",
     "早餐粥点",
     "本帮江浙菜",
+    "湘菜",
     "火锅麻辣烫",
     "烧烤小吃",
     "烧腊卤味",
@@ -20,23 +22,22 @@
     "西式简餐",
     "轻食健康",
     "长三角粉面",
-    "面包甜点",
-    "面食粉面"
+    "面包甜点"
   ],
-  "n_samples": 7340,
+  "n_samples": 7336,
   "split_counts": {
-    "train": 5180,
-    "test": 1127,
-    "val": 1033
+    "train": 5162,
+    "test": 1112,
+    "val": 1062
   },
   "scenario_split_counts": {
-    "train": 1408,
-    "test": 309,
-    "val": 283
+    "train": 1412,
+    "test": 304,
+    "val": 284
   },
   "shift_counts": {
-    "normal": 728,
-    "snow": 399
+    "normal": 744,
+    "snow": 368
   },
   "context_fields": [
     "time_slot",
@@ -63,6 +64,6 @@
   ],
   "source_counts": {
     "chosen": 6000,
-    "considered": 1340
+    "considered": 1336
   }
 }
