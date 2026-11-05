@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""渲染 ui_snapshot.html 并 dump DOM，找出为什么左侧表单是空的。"""
+"""渲染 app/artifacts/ui_snapshot.html 并把渲染后的 DOM dump 到同目录 _domdump.html。
+
+用途：核对快照到底渲染出了什么（表单空不空、预设选中没、忌口按钮多少个）。
+路径一律从脚本位置推仓库根，别写死绝对路径（这项目被移动过目录）。
+"""
 import json
 import re
 import shutil
@@ -8,8 +12,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-SNAP = Path(r"C:\Users\123\Desktop\桌面应用\文档\meal-decision\artifacts\ui_snapshot.html")
-DUMP = Path(r"C:\Users\123\Desktop\桌面应用\文档\_domdump.html")
+ROOT = Path(__file__).resolve().parents[1]          # tooling/ 的上一级 = 仓库根
+SNAP = ROOT / "app" / "artifacts" / "ui_snapshot.html"
+DUMP = ROOT / "app" / "artifacts" / "_domdump.html"
 
 
 def find_chrome():
@@ -49,8 +54,11 @@ def main():
     print()
     print("form 内 .field 个数 :", count(r'class="field"'))
     print("labels              :", count(r"<label>"))
-    print("presets 按钮        :", count(r"<button[^>]*>(?:深夜加班|工作日午餐)") or "见下")
+    m_pre = re.search(r'id="presets">(.*?)</div>', dom, re.S)
+    print("presets 按钮        :",
+          len(re.findall(r"<button", m_pre.group(1))) if m_pre else 0)
     print("chips 按钮          :", count(r'data-name="'))
+    print("原始打分表行数      :", count(r"<tr>"))
     print()
     m = re.search(r'<div id="form">(.*?)</div>\s*<div id="chips">', dom, re.S)
     if not m:

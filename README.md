@@ -151,6 +151,7 @@ p<0.001。**别和上表直接比** —— 上表的测试集和这一行的不�
 | `requirements.txt` | 运行依赖：numpy、pandas |
 | `app/` | 程序与模型 |
 | `app/server.py` | 本地 HTTP 服务 + 单页界面（零额外依赖） |
+| `app/smoke_ui.py` | **界面自动验收**：接口契约 + 快照补丁 + 真实 DOM + 文档锚点，改完前端先跑它 |
 | `app/recommend.py` | 推理核心：加载模型、打分、生成推荐理由 |
 | `app/features.py` | 特征编码：类别→索引、数值→归一化 |
 | `app/train.py` | 训练：手写 numpy 模型 + 反向传播 + 梯度检验 |
@@ -216,6 +217,7 @@ python evaluate.py         :: 生成评估报告 artifacts/report.md
 | **`.bat` 编码** | 存成 UTF-8 后 cmd 报 `'.exe' is not recognized` | cmd 按 OEM 代码页（936/GBK）解析 `.bat`，必须 **GBK + CRLF** |
 | **`.vbs` 中文丢失** | 静默启动失效：中文全被替换成 `?`，连 `.bat` 文件名也成了 `??.bat` | `.vbs` 保持**纯 ASCII**，用 `ChrW(&H542F) & ChrW(&H52A8)` 拼中文文件名 |
 | **快照界面空白** | `snapshot_ui.py` 存成 `file://` 后 `fetch('/api/meta')` 必然失败，左侧表单整块空白 | 把 meta 内容内联进快照 |
+| **快照补丁静默失效** | `snapshot_ui.py` 的 `html.replace` 目标串被改写后变成 no-op，快照悄悄退化成空表单，脚本仍打印「成功」 | `app/smoke_ui.py` 用 AST 抽出全部 replace 目标逐条核对，失效即红 |
 | **双数据源** | `build_dataset.py` 硬编码了 47 道菜，与 `dishes.csv` 是两份数据 | 改为从 `dishes.csv` 读取，单一数据源 |
 
 ### 容量已验证没有提升空间

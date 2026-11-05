@@ -86,8 +86,9 @@ def main():
     html = html.replace("META = await (await fetch('/api/meta')).json();",
                         "META = __SNAP_META__;")
 
-    # 预设选中态与滑块位置：直接改成「深夜加班」的取值，让截图和结果一致
-    html = html.replace("const v2 = el('span'); const v1 = el('span');", "")
+    # 预设选中态：直接改成「深夜加班」的取值，让截图和结果一致。
+    # 注意：下面每个 replace 的目标串都必须能在 server.py 的 PAGE 里原样找到，
+    # 找不到就是**静默 no-op**（快照会悄悄变成空表单）。app/smoke_ui.py 会逐一校验。
     html = html.replace("ST = {...META.presets['工作日午餐']};",
                         "ST = {...META.presets['深夜加班']};")
     # 预填结果面板
