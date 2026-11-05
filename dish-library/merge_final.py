@@ -117,6 +117,20 @@ def main() -> pd.DataFrame:
     n_old, n_new = len(old), len(new)
 
     merged = merged.drop_duplicates("dish_name", keep="first").reset_index(drop=True)
+
+    # ---- 2.5) healthy 标注口径修正 ---------------------------------
+    # 两个源库的 healthy 都是按「做法清淡」手估的（清煮/白煮一律 4），
+    # 于是汆白肉这种白煮五花肉也拿 4。修正逻辑与口径说明统一在
+    # app/healthy_rubric.py，这里必须调用一次 —— 否则重新合并会把修正覆盖回去。
+    sys.path.insert(0, str(APP))
+    from healthy_rubric import correct as correct_healthy
+    merged, _hfix = correct_healthy(merged)
+    if len(_hfix):
+        print(f"healthy 口径修正: {len(_hfix)} 道菜（明细见 app/healthy_rubric.py）")
+        print(_hfix[["dish_name", "healthy_old", "healthy_new", "reason"]]
+              .to_string(index=False))
+        print()
+
     merged.insert(0, "dish_id", range(len(merged)))
 
     # 检查：新库里有多少菜是旧库没有的（净增），以及同名的有多少

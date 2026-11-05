@@ -35,6 +35,7 @@ def fetch_meta(url: str = "http://127.0.0.1:8848/api/meta") -> dict:
 
 def render_block(d: dict) -> str:
     """与前端 draw() 等价的静态 HTML（视觉一致即可）。"""
+    single = d.get("stage") == "single"
     cu = " &nbsp;&nbsp; ".join(
         f'<span class="bar" style="width:{max(6, round(c["prob"] * 130))}px"></span>'
         f'<b>{c["name"]}</b> {c["prob"] * 100:.0f}%' for c in d["cuisine_top"])
@@ -52,13 +53,14 @@ def render_block(d: dict) -> str:
         truth = (f'<div class="truth">对照：规则下的最优是「{tr["best_dish"]}」'
                  f'(效用 {tr["best_possible"]})，本次首推效用 {tr["model_top1_utility"]}。'
                  f'效用是 0~1 的连续值。</div>')
-    return (f'<div class="cuisine">第一层判断： {cu}</div>'
+    note = ("" if single else
+            "只有同一品类内可以横向比较，跨品类没有可比性（这是两层结构的特点）。")
+    return (f'<div class="cuisine">{"品类倾向（展示用）： " if single else "第一层判断： "}{cu}</div>'
             f'<div class="pick"><div class="name">{t["dish_name"]}</div>'
             f'<div class="meta">{t["category"]} · {t["price"]} 元 · {t["time_cost"]} 分钟</div>'
             f'<div class="why">为什么：{t["reason"]}</div></div>{alts}'
             f'<details open><summary>看模型给每道菜的原始打分（不美化）</summary>'
-            f'<div class="fine">分数是模型学出来的效用预测值，<b>只能在同一品类内横向比较</b>，'
-            f'跨品类没有可比性（这是两层结构的特点）。同一品类内分数越接近，'
+            f'<div class="fine">分数是模型学出来的效用预测值，{note}同一批候选里分数越接近，'
             f'说明这几道菜本来就差不多，随便挑一个都行。</div>'
             f'<table class="raw"><tr><th>菜</th><th>分数</th></tr>{rows}</table></details>'
             f'{truth}')

@@ -19,7 +19,25 @@ app/artifacts/ui_snapshot.html
 app/capacity-study/artifacts/
 app/capacity-study/__pycache__/
 
+# ---- 实验产物（交接文档 §7.5）----
+# 这些都是可重建的实验输出，不要进仓库：
+#   artifacts_probe / artifacts_sweep*   : 配置扫描结果（JSON，小，但可重跑）
+#   artifacts_torch*                     : PyTorch 训练产物，**线上模型不用这些**
+#   artifacts_torch_pick 尤其不要进仓库（h96 候选，已被多 seed 复测推翻）
+#   artifacts_v2 / artifacts_20k         : 放量实验数据集（20k 的效用矩阵约 66 MB）
+#   artifacts_eval                       : 公共留出集（跨数据集比较用）
+app/artifacts_probe/
+app/artifacts_sweep*/
+app/artifacts_torch*/
+app/artifacts_v2/
+app/artifacts_20k/
+app/artifacts_eval/
+app/artifacts_listwise*/
+# artifacts_orig：从 git HEAD 还原的原始数据集，只用于「改前 vs 改后」的基线
+app/artifacts_orig/
+
 # ---- 临时/调试产物 ----
 *.log
 *.tmp
+_log_*.txt
 _live.png

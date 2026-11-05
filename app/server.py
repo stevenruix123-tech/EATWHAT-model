@@ -86,20 +86,38 @@ def predict(payload: dict) -> dict:
     row = pd.DataFrame([sc])
     c, n = T.encode_context(row)
 
-    # ---- 第一层：品类分布 ----
-    # 用温度缩放软化：模型原始 logits 偏尖锐（会给出 99%、100% 这种过度自信的
-    # 数字），而它的实际品类命中率约 70%（见 artifacts/report.md 的分指标拆解）。
-    # 展示值应当反映真实把握，所以把温度调大压平分布。
-    CUISINE_T = 2.0
-    logits = cm.forward(c, n)[0]
-    z = (logits - logits.max()) / CUISINE_T
-    cat_p = np.exp(z)
-    cat_p = cat_p / cat_p.sum()
-    cat_order = np.argsort(-cat_p)
-    win = int(cat_order[0])
+    # ---- 结构分支 ----
+    # 单阶段模型（cm is None）：菜品打分器用「整目录 824 路 softmax」训练，
+    #   分数跨品类可比，直接在全部菜里排序（交接文档 §7.4）。
+    #   此时没有第一层过滤，品类分布只作展示，由菜品打分的品类聚合得到。
+    # 两层模型：先选品类，再在候选品类内排序。
+    single = cm is None
+    if single:
+        cand = np.arange(N_DISH)
+        CUISINE_T = 2.0
+        ids_all, dc_all, dn_all = T.tile_dishes(cand[None, :], 1)
+        pre = dm.forward(c, n, ids_all, dc_all, dn_all)[0].astype(float)
+        top30 = np.argsort(-pre, kind="stable")[:30]
+        agg = np.zeros(len(CATEGORIES))
+        for i in top30:
+            agg[DISH_CAT_IDX[int(i), 0]] += np.exp(pre[i] - pre[top30[0]])
+        cat_p = agg / max(agg.sum(), 1e-12)
+        cat_order = np.argsort(-cat_p)
+        win = int(cat_order[0])
+    else:
+        # 用温度缩放软化：模型原始 logits 偏尖锐（会给出 99%、100% 这种过度自信的
+        # 数字），而它的实际品类命中率约 70%（见 artifacts/report.md 的分指标拆解）。
+        # 展示值应当反映真实把握，所以把温度调大压平分布。
+        CUISINE_T = 2.0
+        logits = cm.forward(c, n)[0]
+        z = (logits - logits.max()) / CUISINE_T
+        cat_p = np.exp(z)
+        cat_p = cat_p / cat_p.sum()
+        cat_order = np.argsort(-cat_p)
+        win = int(cat_order[0])
+        cand = np.where(DISH_CAT_IDX[:, 0] == win)[0]
 
-    # ---- 第二层：候选品类内逐道打分 ----
-    cand = np.where(DISH_CAT_IDX[:, 0] == win)[0]
+    # ---- 逐道打分（单阶段=全库，两层=候选品类内）----
     ids, dc, dn = T.tile_dishes(cand[None, :], 1)
     scores = dm.forward(c, n, ids, dc, dn)[0].astype(float)
     ex_mask = np.array([DISH_NAMES[int(i)] in exclude for i in cand])
@@ -107,15 +125,21 @@ def predict(payload: dict) -> dict:
         ex_mask = np.zeros_like(ex_mask, dtype=bool)
     scores = np.where(ex_mask, -1e9, scores)
 
-    # 品类内相对概率。
-    # 为什么不能直接 softmax：模型的原始分数没有概率校准，同一品类内分数
-    # 往往挤在很窄的区间（真实效用差 0.008，分数差也很小），直接 softmax
-    # 会给出「98% vs 0.5%」这种严重夸大的对比。
-    # 做法：先按温度缩放软化，再映射到该品类内的相对匹配度。
-    T_SCALE = 0.35
-    z = (scores - scores.max()) / T_SCALE
-    p = np.exp(np.clip(z, -30, 0))
-    p = p / p.sum()
+    # 相对概率（展示用）。
+    # 模型的原始分数没有概率校准，不能直接全库 softmax：
+    #   - 两层模型：候选是「一个品类」，约 43 道，且分数挤在很窄的区间；
+    #   - 单阶段模型：候选是全部 824 道，很多菜同样合适，全库 softmax 会让
+    #     每个概率都趋近 0（实测前 3 名只有 1%、1%、0%，展示上毫无意义）。
+    # 做法：只在「头部候选」内部算相对匹配度 —— 头部 10 道的动态范围当温度，
+    # 这样显示的是「前几名之间差多少」，而不是「占全库的多少」。
+    head = np.argsort(-scores)[:max(10, topk)]
+    hs = scores[head]
+    span = float(hs[0] - hs[-1]) if len(hs) > 1 else 0.0
+    T_SCALE = max(span / 3.0, 1e-6)
+    ph = np.exp(np.clip((hs - hs[0]) / T_SCALE, -30, 0))
+    ph = ph / ph.sum()
+    p = np.zeros(len(scores))
+    p[head] = ph
 
     order = np.argsort(-scores)[:topk]
     items = []
@@ -153,6 +177,8 @@ def predict(payload: dict) -> dict:
 
     return {
         "scenario": sc,
+        # 单阶段（整目录 softmax）时品类分布只是展示，不参与筛选 —— 前端据此换措辞
+        "stage": "single" if single else "two_layer",
         "cuisine_top": [
             {"name": CATEGORIES[int(i)], "prob": round(float(cat_p[i]), 4)}
             for i in cat_order[:3]
@@ -201,6 +227,9 @@ class Handler(BaseHTTPRequestHandler):
                 ],
                 "presets": R.PRESETS,
                 "stats": _MODEL["stats"],
+                # 模型结构：有 cuisine.* 才是两层。前端靠它在首屏就显示正确的措辞，
+                # 不能等第一次出结果（draw）才纠正 —— 否则首屏会谎报结构。
+                "stage": "single" if _MODEL.get("cm") is None else "two_layer",
             })
         else:
             self._json({"error": "not found"}, 404)
@@ -300,7 +329,7 @@ PAGE = r"""<!DOCTYPE html>
 <body>
 <header>
   <h1>今天该吃什么</h1>
-  <div class="sub">两层决策模型 · 第一层判断品类，第二层在品类内排序 ·
+  <div class="sub">决策模型 · <span id="stage-label">两层结构：先判断品类，再在品类内排序</span> ·
     <span id="stats"></span></div>
 </header>
 
@@ -332,6 +361,11 @@ function el(t,c,h){const e=document.createElement(t); if(c)e.className=c;
 async function boot(){
   META = await (await fetch('/api/meta')).json();
   ST = {...META.presets['工作日午餐']};
+  // 首屏就把结构写对：单阶段 / 两层（否则要等第一次出结果才纠正，首屏会谎报）
+  const sl0 = document.getElementById('stage-label');
+  if (sl0) sl0.textContent = META.stage === 'single'
+    ? '单阶段：整目录 softmax，直接在全部菜里排序'
+    : '两层结构：先判断品类，再在品类内排序';
   const s = META.stats;
   document.getElementById('stats').textContent =
     `${s.n_dishes} 道菜 / ${s.n_categories} 个品类 · 训练自 ${s.n_scenarios} 个情境、${s.n_rows} 条记录`;
@@ -449,10 +483,14 @@ async function run(){
 function draw(d){
   const out = document.getElementById('out');
   out.innerHTML='';
+  const sl = document.getElementById('stage-label');
+  if (sl) sl.textContent = d.stage === 'single'
+    ? '单阶段：整目录 softmax，直接在全部菜里排序'
+    : '两层结构：先判断品类，再在品类内排序';
   const bar = (p)=>{const w=Math.max(6,Math.round(p*130));
     return `<span class="bar" style="width:${w}px"></span>`;};
   const cu = el('div','cuisine');
-  cu.innerHTML = '第一层判断： ' + d.cuisine_top.map(c=>
+  cu.innerHTML = (d.stage === 'single' ? '品类倾向（展示用）： ' : '第一层判断： ') + d.cuisine_top.map(c=>
     `${bar(c.prob)}<b>${c.name}</b> ${(c.prob*100).toFixed(0)}%`).join(' &nbsp;&nbsp; ');
   out.appendChild(cu);
 

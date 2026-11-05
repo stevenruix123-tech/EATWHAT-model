@@ -79,15 +79,32 @@ PRESETS = {
 
 # ---------------------------------------------------------------------------
 def load_models():
-    cm = T.CuisineNet(np.random.default_rng(T.SEED))
+    """读 `model.npz`，支持两种可部署结构。
+
+    - **两层**（含 `cuisine.*` 键）：先选品类，再在品类内排序
+    - **单阶段**（无 `cuisine.*` 键）：菜品打分器用整目录 softmax 训练，
+      分数跨品类可比，直接对全部菜排序（交接文档 §7.4）
+
+    两种结构返回同一个签名 `(cm, dm)`，单阶段时 `cm is None`。
+    """
     dm = T.DishScorer(np.random.default_rng(T.SEED + 1))
     z = np.load(ART / "model.npz")
-    cp, dp = cm.params(), dm.params()
-    missing = [k for k in cp if f"cuisine.{k}" not in z]
+
+    cm = None
+    if any(k.startswith("cuisine.") for k in z.files):
+        cm = T.CuisineNet(np.random.default_rng(T.SEED))
+        cp = cm.params()
+        missing = [k for k in cp if f"cuisine.{k}" not in z]
+        if missing:
+            raise SystemExit(f"模型文件不匹配，缺少 {missing}；请重新运行 train.py")
+        for k, v in cp.items():
+            v[...] = z[f"cuisine.{k}"]
+
+    dp = dm.params()
+    missing = [k for k in dp if f"dish.{k}" not in z]
     if missing:
-        raise SystemExit(f"模型文件不匹配，缺少 {missing}；请重新运行 train.py")
-    for k, v in cp.items():
-        v[...] = z[f"cuisine.{k}"]
+        raise SystemExit(
+            f"模型文件不匹配，缺少 {missing}；请重新运行 train.py 或 export_npz.py")
     for k, v in dp.items():
         v[...] = z[f"dish.{k}"]
     return cm, dm
@@ -141,12 +158,24 @@ def why(dish_row, sc: dict) -> str:
 
 def recommend(sc: dict, cm, dm, topk: int = 3, verbose: bool = True):
     row = pd.DataFrame([sc])
-    top, scores, w = T.predict_row(row.iloc[0], cm, dm, topk=topk, use_filter=True)
-    # 第一层的品类概率（给出「为什么是这个品类」）
+    single = cm is None
+    top, scores, w = T.predict_row(row.iloc[0], cm, dm, topk=topk, use_filter=not single)
+
+    # 品类倾向：两层结构来自第一层分类器；单阶段结构由「菜品打分的品类聚合」得到，
+    # 只作展示，不参与候选筛选（单阶段没有第一层过滤）。
     c, n = T.encode_context(row)
-    logits = cm.forward(c, n)[0]
-    p = np.exp(logits - logits.max())
-    p = p / p.sum()
+    if single:
+        ids, dc, dn = T.tile_dishes(np.arange(N_DISH)[None, :], 1)
+        s_all = dm.forward(c, n, ids, dc, dn)[0].astype(float)
+        top_n = np.argsort(-s_all, kind="stable")[:30]
+        agg = np.zeros(len(CATEGORIES))
+        for i in top_n:
+            agg[DISH_CAT_IDX[int(i), 0]] += np.exp(s_all[i] - s_all[top_n[0]])
+        p = agg / max(agg.sum(), 1e-12)
+    else:
+        logits = cm.forward(c, n)[0]
+        p = np.exp(logits - logits.max())
+        p = p / p.sum()
     order = np.argsort(-p)
     cat_rank = [(CATEGORIES[i], float(p[i])) for i in order[:3]]
 
@@ -154,8 +183,9 @@ def recommend(sc: dict, cm, dm, topk: int = 3, verbose: bool = True):
         print("情境：" + "  ".join(
             f"{lbl}={sc[f]}" for f, _, lbl, _ in FIELD_INFO if f != "available_time"
         ) + f"  可用时间={sc['available_time']}分钟")
-        print(f"第一层品类判断： " + "  ".join(f"{c}({v:.0%})" for c, v in cat_rank))
-        print(f"第二层菜品排序（候选 {len(np.where(DISH_CAT_IDX[:, 0] == w)[0])} 道）：")
+        label = "品类倾向（展示用，不参与筛选）" if single else "第一层品类判断"
+        print(f"{label}：" + "  ".join(f"{c}({v:.0%})" for c, v in cat_rank))
+        print(f"菜品排序（候选 {N_DISH if single else len(np.where(DISH_CAT_IDX[:, 0] == w)[0])} 道）：")
         for rank, (did, s) in enumerate(zip(top, scores), 1):
             d = DISH_TABLE.iloc[int(did)]
             print(f"   {rank}. {DISH_NAMES[int(did)]:<16s} [{d.category}] "
@@ -202,7 +232,8 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     cm, dm = load_models()
     print("=" * 68)
-    print("今天该吃什么 —— 两层决策模型")
+    print("今天该吃什么 —— " + ("单阶段模型（整目录 softmax）" if cm is None
+                                else "两层决策模型"))
     print("=" * 68 + "\n")
 
     if args.interactive:

@@ -62,7 +62,12 @@ def main():
     # ---------- 2. 逐情境评估 ----------
     te = scenarios[scenarios.split == "test"].reset_index(drop=True)
     U = np.stack([T.utility_vector(r) for _, r in te.iterrows()])     # [N, N_DISH] 上帝视角
-    best_all = U.argmax(1)
+    # 「上帝视角最优」必须取数据集自己记录的 gold_dish，而不是 np.argmax(U)。
+    # 效用矩阵里并列极多，argmax 取第一个最大值、而 gold_dish 是建集时用
+    # 稳定 argsort 取的，两者在并列时不是同一道菜（详见交接文档 §4.8）。
+    # 用 argmax 会让本报告的 top-1 与 metrics.json（train.evaluate 用 gold_dish）
+    # 差出 0.1pp 量级 —— 属于"同一件事两种口径"，不是模型差别。
+    best_all = te.gold_dish.map(name2id).values
 
     rows = []
     snow_ids = set(samples.loc[samples["shift"] == "snow", "scenario_id"])
@@ -99,45 +104,68 @@ def main():
                 .groupby("time_slot").dish_id.agg(lambda s: s.mode().iat[0]).to_dict())
     u_slotpop = float(np.mean([U[i][slot_pop[r.time_slot]] for i, r in te.iterrows()]))
     u_best = float(D.u_best_all.mean())
+    single = cm is None          # 单阶段（整目录 softmax）模型没有第一层
 
     say("\n## 2. 推荐质量（测试集 n=%d）\n" % len(te))
     say("| 策略 | 平均效用 | 相对最优 |")
     say("|---|---|---|")
     say(f"| 理论最优（上帝视角） | {u_best:.4f} | 100.0% |")
-    say(f"| **本模型（两层）** | **{D.u_model.mean():.4f}** | "
+    model_name = "本模型（单阶段·整目录 softmax）" if single else "本模型（两层）"
+    say(f"| **{model_name}** | **{D.u_model.mean():.4f}** | "
         f"**{D.u_model.mean() / u_best:.1%}** |")
     say(f"| 按时段选最热门菜 | {u_slotpop:.4f} | {u_slotpop / u_best:.1%} |")
     say(f"| 永远选全库最热门菜（{DISH_NAMES[pop_global]}） | {u_pop:.4f} | {u_pop / u_best:.1%} |")
     say(f"| 随机选 | {u_rand:.4f} | {u_rand / u_best:.1%} |")
-    say(f"| 单层模型（不做品类过滤） | {D.u_model_nofilter.mean():.4f} | "
-        f"{D.u_model_nofilter.mean() / u_best:.1%} |")
+    if not single:
+        say(f"| 单层模型（不做品类过滤） | {D.u_model_nofilter.mean():.4f} | "
+            f"{D.u_model_nofilter.mean() / u_best:.1%} |")
 
     say("\n## 3. 分指标拆解\n")
     tr = scenarios[scenarios.split == "train"]
     slot_major = tr.groupby("time_slot").gold_category.agg(lambda s: s.mode().iat[0]).to_dict()
     maj_acc = float(np.mean([slot_major[r.time_slot] == r.gold_category
                              for _, r in te.iterrows()]))
-    say("| 指标 | 两层模型 | 单层模型 | 说明 |")
-    say("|---|---|---|---|")
-    say(f"| 品类命中率 | {np.mean(D.pred_cat == D.gold_cat):.2%} | — | "
-        f"第一层选对品类（盲目按时段猜最热门只有 {maj_acc:.1%}）|")
-    say(f"| top-1 命中全库最优 | {D.hit1_all.mean():.2%} | {D.hit1_all_nofilter.mean():.2%} | "
-        f"精确命中，受标签噪声限制 |")
-    say(f"| top-3 命中全库最优 | {D.hit3_all.mean():.2%} | {D.hit3_all_nofilter.mean():.2%} | |")
-    say(f"| 品类内 top-1 | {D.hit1_cat.mean():.2%} | — | 排除品类选择后的菜品排序能力 |")
-    say(f"| 品类内 top-3 | {D.hit3_cat.mean():.2%} | — | |")
-    say(f"| 平均后悔值 | {(D.u_best_all - D.u_model).mean():.4f} | "
-        f"{(D.u_best_all - D.u_model_nofilter).mean():.4f} | 越低越好 |")
+    if single:
+        say("| 指标 | 数值 | 说明 |")
+        say("|---|---|---|")
+        say(f"| 品类命中率 | {np.mean(D.pred_cat == D.gold_cat):.2%} | "
+            f"选中那道菜所属品类是否等于最优秀所属品类（盲目按时段猜最热门只有 {maj_acc:.1%}）|")
+        say(f"| top-1 命中全库最优 | {D.hit1_all.mean():.2%} | 精确命中，受标签噪声限制 |")
+        say(f"| top-3 命中全库最优 | {D.hit3_all.mean():.2%} | |")
+        say(f"| 平均后悔值 | {(D.u_best_all - D.u_model).mean():.4f} | 越低越好 |")
+    else:
+        say("| 指标 | 两层模型 | 单层模型 | 说明 |")
+        say("|---|---|---|---|")
+        say(f"| 品类命中率 | {np.mean(D.pred_cat == D.gold_cat):.2%} | — | "
+            f"第一层选对品类（盲目按时段猜最热门只有 {maj_acc:.1%}）|")
+        say(f"| top-1 命中全库最优 | {D.hit1_all.mean():.2%} | "
+            f"{D.hit1_all_nofilter.mean():.2%} | 精确命中，受标签噪声限制 |")
+        say(f"| top-3 命中全库最优 | {D.hit3_all.mean():.2%} | {D.hit3_all_nofilter.mean():.2%} | |")
+        say(f"| 品类内 top-1 | {D.hit1_cat.mean():.2%} | — | 排除品类选择后的菜品排序能力 |")
+        say(f"| 品类内 top-3 | {D.hit3_cat.mean():.2%} | — | |")
+        say(f"| 平均后悔值 | {(D.u_best_all - D.u_model).mean():.4f} | "
+            f"{(D.u_best_all - D.u_model_nofilter).mean():.4f} | 越低越好 |")
 
-    say(f"\n**为什么 top-1 没有更高？** 品类内平均 {len(DISH_NAMES) / max(len(CATEGORIES), 1):.1f} 道菜彼此相似，"
-        f"最优与次优的平均效用差只有 {np.mean([np.sort(U[i][DISH_CAT_IDX[:, 0] == DISH_CAT_IDX[best_all[i], 0]])[-1] - np.sort(U[i][DISH_CAT_IDX[:, 0] == DISH_CAT_IDX[best_all[i], 0]])[-2] for i in range(len(te))]):.4f}，"
-        "而且约 12% 的样本本来就是随手选的。所以决策模型该看**效用/后悔值**，"
-        "而不是精确命中率。")
+    if single:
+        g_global = np.mean([np.sort(U[i])[-1] - np.sort(U[i])[-2] for i in range(len(te))])
+        say(f"\n**为什么 top-1 没有更高？** 全库 {len(DISH_NAMES)} 道菜里，最优与次优的平均效用差"
+            f"只有 {g_global:.4f}，而且约 12% 的样本本来就是随手选的。"
+            "所以决策模型该看**效用/后悔值**，而不是精确命中率。")
+    else:
+        say(f"\n**为什么 top-1 没有更高？** 品类内平均 {len(DISH_NAMES) / max(len(CATEGORIES), 1):.1f} 道菜彼此相似，"
+            f"最优与次优的平均效用差只有 {np.mean([np.sort(U[i][DISH_CAT_IDX[:, 0] == DISH_CAT_IDX[best_all[i], 0]])[-1] - np.sort(U[i][DISH_CAT_IDX[:, 0] == DISH_CAT_IDX[best_all[i], 0]])[-2] for i in range(len(te))]):.4f}，"
+            "而且约 12% 的样本本来就是随手选的。所以决策模型该看**效用/后悔值**，"
+            "而不是精确命中率。")
 
-    say("\n**两层结构是否必要？** 单层模型让打分器直接在全部菜品里排序，效果明显更差。"
-        "原因是打分器只在「同品类内」训练过排序，分数没有跨品类可比性；"
-        f"加上第一层过滤后，问题被分解成「先选对大类、再在 "
-        f"{len(DISH_NAMES) / max(len(CATEGORIES), 1):.0f} 道左右里挑」，误差不互相干扰。")
+    if single:
+        say("\n**为什么是单阶段？** 打分器用「整目录 824 路 softmax」训练（交接文档 §7.4），"
+            "分数天生跨品类可比，所以不需要先过滤品类 —— 这也修掉了"
+            "「薄品类候选太少，第 2/3 名只能从该品类内挑」的问题。")
+    else:
+        say("\n**两层结构是否必要？** 单层模型让打分器直接在全部菜品里排序，效果明显更差。"
+            "原因是打分器只在「同品类内」训练过排序，分数没有跨品类可比性；"
+            f"加上第一层过滤后，问题被分解成「先选对大类、再在 "
+            f"{len(DISH_NAMES) / max(len(CATEGORIES), 1):.0f} 道左右里挑」，误差不互相干扰。")
 
     # ---------- 4. 分布偏移 ----------
     say("\n## 4. 分布偏移：没见过的情境\n")
@@ -172,15 +200,15 @@ def main():
     say(f"1. 模型推荐的平均效用 {D.u_model.mean():.4f}，达到理论最优的 "
         f"{D.u_model.mean() / u_best:.1%}，比「按时段选热门菜」基线高 "
         f"{(D.u_model.mean() / u_slotpop - 1):+.1%}")
+    cat_acc = float(np.mean(D.pred_cat == D.gold_cat))
     say(f"2. 后悔值 {(D.u_best_all - D.u_model).mean():.4f} 全部来自品类内选菜："
-        f"品类命中率虽然只有 {np.mean(D.pred_cat == D.gold_cat):.2%}，"
-        f"但选错的 16% 里，替代品类里也有效用相当的菜，所以没有造成额外损失。"
-        f"想继续提升，应当增加品类内菜品的区分度（本项目已用「考虑集评分」"
-        f"把 top-3 从 59% 提到 73%）")
+        f"品类命中率虽然只有 {cat_acc:.2%}，"
+        f"但选错的 {1 - cat_acc:.0%} 里，替代品类里也有效用相当的菜，所以没有造成额外损失。"
+        f"想继续提升，应当增加品类内菜品的区分度（可用「考虑集评分」给同品类的非最优菜补观测信号）")
     say(f"3. 雪天这类没见过的情境上，top-3 从常规的 "
         f"{(D[D['shift'] == 'normal'].hit3_all.mean() if (D['shift'] == 'normal').any() else 0):.1%} "
-        f"略降到 {(D[D['shift'] == 'snow'].hit3_all.mean() if (D['shift'] == 'snow').any() else 0):.1%}，"
-        f"没有崩塌，说明模型学到的是「时间/饥饿/心情/健康 × 菜品属性」的规则，"
+        f"降到 {(D[D['shift'] == 'snow'].hit3_all.mean() if (D['shift'] == 'snow').any() else 0):.1%}，"
+        f"但远高于随机水平，说明模型学到的是「时间/饥饿/心情/健康 × 菜品属性」的规则，"
         f"不是死记硬背。注意雪天平均效用反而更高，是因为雪天情境本身偏好"
         f"「快 + 热乎」，命中率更高，这不是模型变强")
     say(f"4. 已知局限：效用函数的权重是我手工设定的常识规则，"

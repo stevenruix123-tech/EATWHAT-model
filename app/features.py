@@ -15,7 +15,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ART = Path(__file__).resolve().parent / "artifacts"
+ART = Path(os.environ.get("EATWHAT_ART")
+           or Path(__file__).resolve().parent / "artifacts")
+# EATWHAT_ART 让整条链路（train / evaluate / recommend / server）指向另一份
+# 数据集目录，用于放量实验：不覆盖线上 artifacts 就能对比新旧数据。
+# 例：$env:EATWHAT_ART = "../artifacts_20k"; python train.py
+if not ART.is_dir():
+    raise SystemExit(f"EATWHAT_ART 指向的目录不存在：{ART}")
 
 _dishes = pd.read_csv(ART / "dishes.csv")
 DISHES = _dishes

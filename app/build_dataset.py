@@ -3,16 +3,22 @@
 build_dataset.py —— 生成「今天该吃什么」决策数据集
 
 思路（三层）：
-  1. 菜品库 dishes.csv      ：317 道菜，18 个品类，每道菜带客观属性
+  1. 菜品库 dishes.csv      ：824 道菜，19 个品类，每道菜带客观属性
   2. 情境采样 + 效用函数     ：对「情境 x 菜品」打一个 0~1 的分数 utility
   3. 训练表 samples.csv      ：情境特征 + 实际选择 + 该菜品的真实效用
 
 关键点：真实效用 utility 就是「结果信号」。
         它连续、有噪声、且只有被选中的那道菜能被观测到 —— 这正是决策数据的形态。
+
+放量（交接文档 §7.1）：
+    python build_dataset.py --scenarios 20000 --out ../artifacts_20k
+  情境数放大 10 倍时 CAP 与候选池同步等比放大，保持分布形状不变；
+  效用矩阵改成分块计算（放量后全量矩阵会到 1.6 GB）。
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import re
@@ -25,15 +31,22 @@ import pandas as pd
 # 全局配置
 # ----------------------------------------------------------------------------
 SEED = 20240617
-N_SCENARIOS = 2000      # 唯一情境数
+N_SCENARIOS = 2000      # 唯一情境数（默认值，可用 --scenarios 覆盖）
 SAMPLES_PER_SCENARIO = 3  # 每个情境重复采样的次数（模拟同一个情境下的多次真实选择）
-# 候选情境池大小。原来取 N_SCENARIOS*5=10000，那时只有 8 个品类、
-# 「选择明确」的情境占比高，够用。菜品库扩到 18 品类 / 317 道菜之后，
+# 候选情境池倍数。原来取 N_SCENARIOS*5=10000，那时只有 8 个品类、
+# 「选择明确」的情境占比高，够用。菜品库扩到 19 品类 / 824 道菜之后，
 # 同品类内相似菜变多、并列变多，通过筛选的候选变少，池子必须放大才不会
 # 出现「keep 不够 2000 -> 情境 id 回绕 -> 同一情境重复计入」。取 10 倍。
-CANDIDATE_POOL = N_SCENARIOS * 10
-OUT = Path(__file__).resolve().parent / "artifacts"
-OUT.mkdir(parents=True, exist_ok=True)
+POOL_MULT = 10
+CANDIDATE_POOL = N_SCENARIOS * POOL_MULT
+# 「品类 × 时段」配额：按 4.5% 标定（90/2000），放量时等比放大以保持分布形状。
+CAP_PER_2000 = 90
+APP = Path(__file__).resolve().parent
+# 菜品库固定从 app/artifacts/dishes.csv 读 —— 单一数据源，与 --out 无关。
+# （放量实验输出到别的目录时仍必须用同一份菜库，否则两份菜库会静默漂移。）
+ART_CANON = APP / "artifacts"
+DISH_CSV = ART_CANON / "dishes.csv"
+OUT = ART_CANON          # 默认输出目录，可用 --out 覆盖
 
 rng = np.random.default_rng(SEED)
 
@@ -50,7 +63,9 @@ DISH_COLS = ["dish_name", "category", "time_cost", "price", "spicy", "heavy",
 # 菜品库从 artifacts/dishes.csv 读取 —— 单一数据源。
 # （旧版把菜品硬编码在本文件里，与 dishes.csv 是两份数据，改一处漏一处必然不同步。
 #  现在 dishes.csv 是唯一来源，features.py 也读同一个文件。）
-DISH_CSV = OUT / "dishes.csv"
+# 注意这里读的是 ART_CANON，不是 OUT：放量实验输出到独立目录时，
+# 菜库仍然只有这一份，避免两份菜库静默漂移。
+DISH_CSV = ART_CANON / "dishes.csv"
 if not DISH_CSV.exists():
     raise SystemExit(
         f"找不到菜品库 {DISH_CSV}。\n"
@@ -348,8 +363,15 @@ def utility_all(da: dict, sc: dict) -> np.ndarray:
         score -= 0.85 * (heavy >= 5)
     elif health == "严格控制":
         excluded |= (healthy <= 2)      # 直接排除：这一档根本不会被考虑
-        score -= 1.30 * (heavy >= 4)
-        score -= 0.35 * (heavy == 3)
+        # 过厚重的菜整道排除。原来只扣 1.30 分「软化」，红烧/扣肉类仍能进前三。
+        # 减脂的人不会把这类菜放进候选 —— 这是筛选，不是罚分。
+        excluded |= (heavy >= 4)
+        # heavy=3 才是重灾区：旧值 0.35 扣得太轻，而 healthy=4 能拿
+        # +1.20*4/5 = +0.96，净得 +0.61，于是「白肉汆酸菜 / 松仁小肚」这类
+        # 白煮五花肉、加工肉制品排到「减脂期午餐」第一（交接文档 §7.2 的实测现象）。
+        # 提到 1.05 后 heavy=3 净得 -0.09，与 heavy=2 的 +0.96 拉开档次，
+        # 决定权回到真的清淡的菜上。
+        score -= 1.05 * (heavy == 3)
     if hw > 0:
         score += 1.20 * hw * healthy / 5.0
         score -= 0.55 * hw * np.maximum(0.0, heavy - 3) / 2.0
@@ -417,18 +439,70 @@ def _final_scale(raw: np.ndarray) -> np.ndarray:
 # ----------------------------------------------------------------------------
 # 4. 生成数据（扫描式情境筛选：留下「选择足够明确」且口味多样的情境）
 # ----------------------------------------------------------------------------
-def build():
-    print("生成候选情境并计算效用矩阵 ...")
-    candidates = [sample_scenario(i) for i in range(CANDIDATE_POOL)]
+# ----------------------------------------------------------------------------
+# 4. 生成数据（扫描式情境筛选：留下「选择足够明确」且口味多样的情境）
+# ----------------------------------------------------------------------------
+def _score_candidates(candidates, da, chunk=5000, verbose=True):
+    """第一遍扫描：分块算「所有在池情境 × 所有菜」的效用，只留最优/次优两列。
+
+    为什么只留两列：放量到 2 万情境后候选池是 24 万，全量效用矩阵
+    240000 × 824 × 8B ≈ 1.6 GB，直接爆内存。分块后峰值只有几十 MB。
+
+    为什么用 argsort 的索引而不是 np.argmax：两者在**完全并列**时取的不是
+    同一道菜（argmax 取第一个最大值，稳定 argsort 取索引最小的那个）。旧代码
+    第一遍用 argmax 记 CAP 的键、第二遍用 argsort 记 gold_*，2000 行里有
+    445 行两边不是同一道菜，于是 CAP 统计的键与落盘口径错位 —— 表现为
+    「湘菜×午餐 130 个 > CAP 90」这种自相矛盾的数据（品类均衡控制因此部分失效）。
+    现在两遍都走同一个 argsort(kind="stable")，并在第二遍断言一致。
+    """
+    n = len(candidates)
+    best_idx = np.empty(n, dtype=np.int64)
+    gap = np.empty(n, dtype=np.float64)
+    for s in range(0, n, chunk):
+        e = min(s + chunk, n)
+        V = np.stack([_final_scale(utility_all(da, sc)) for sc in candidates[s:e]])
+        order = np.argsort(-V, axis=1, kind="stable")[:, :2]
+        rows = np.arange(e - s)
+        best_idx[s:e] = order[:, 0]
+        gap[s:e] = V[rows, order[:, 0]] - V[rows, order[:, 1]]
+        if verbose:
+            print(f"\r  效用计算 {e}/{n}", end="", flush=True)
+    if verbose:
+        print()
+    return best_idx, gap
+
+
+def build(n_scenarios=None, out=None, pool_mult=None, cap=None, seed=None,
+          verbose=True):
+    """生成数据集。
+
+    n_scenarios : 唯一情境数（默认 N_SCENARIOS）
+    out         : 输出目录（默认 app/artifacts；放量实验请给独立目录）
+    pool_mult   : 候选池倍数，池 = n_scenarios * pool_mult（默认 POOL_MULT）
+    cap         : 每个「品类 × 时段」最多贡献多少个情境（默认按 n_scenarios 等比缩放）
+    seed        : 覆盖全局随机种子
+    """
+    global rng
+    n_scenarios = int(N_SCENARIOS if n_scenarios is None else n_scenarios)
+    out = Path(OUT if out is None else out)
+    pool_mult = POOL_MULT if pool_mult is None else pool_mult
+    if seed is not None:
+        rng = np.random.default_rng(seed)
+    out.mkdir(parents=True, exist_ok=True)
+    pool_size = int(n_scenarios * pool_mult)
+    if cap is None:
+        # CAP 是「口味均衡」的配额。它必须随情境数等比放大，否则放量后
+        # 大品类会把配额吃满、小品类被挤没，数据集分布会整体倾斜 ——
+        # 那样就和旧数据不可比了。90/2000 = 4.5% 是原标定值。
+        cap = max(20, int(round(CAP_PER_2000 * n_scenarios / 2000)))
+
+    print(f"生成候选情境并计算效用矩阵 ...")
+    print(f"  情境 {n_scenarios} / 候选池 {pool_size} / CAP {cap}")
+    candidates = [sample_scenario(i) for i in range(pool_size)]
     n_dish = len(dishes)
     da = _dish_arrays(dishes)          # 向量化效用计算用的数组（只构造一次）
-    U = np.zeros((len(candidates), n_dish))
-    for ci, sc in enumerate(candidates):
-        U[ci] = utility_all(da, sc)
-    V = _final_scale(U)
-    top2 = np.sort(V, axis=1)[:, -2:][:, ::-1]
-    gap = top2[:, 0] - top2[:, 1]
-    best_idx = V.argmax(axis=1)
+
+    best_idx, gap = _score_candidates(candidates, da, verbose=verbose)
     best_cat = dishes.category.to_numpy()[best_idx]
     best_slot = np.array([c["time_slot"] for c in candidates])
 
@@ -440,43 +514,50 @@ def build():
     allowed = keep_clear | (keep_tie & tie_keep)
 
     # 口味均衡：品类 x 时段 组合最多 CAP 个情境，避免大品类一家独大。
-    # 原值 160 是按「8 个品类、每类 6 道菜」标定的；菜品库扩到 18 个品类后
+    # 原值 160 是按「8 个品类、每类 6 道菜」标定的；菜品库扩到 19 个品类后
     # 该上限几乎不再生效（大品类靠菜多、时段宽，稳定霸榜），小品类会被挤到
     # 只剩个位数样本 —— 实测「早茶点心」只当上 2 次最优。
-    # 这里按品类数等比调小，让每个「品类 x 时段」都有机会进数据集。
-    CAP = 90
     counts: dict = {}
     keep = []
     for ci in range(len(candidates)):
         if not allowed[ci]:
             continue
         key = (best_cat[ci], best_slot[ci])
-        if counts.get(key, 0) >= CAP:
+        if counts.get(key, 0) >= cap:
             continue
         counts[key] = counts.get(key, 0) + 1
         keep.append(ci)
-    keep = np.array(keep)
-    if len(keep) < N_SCENARIOS:
+    keep = np.array(keep, dtype=np.int64)
+    if len(keep) < n_scenarios:
         # 不够就会在下一行切片时静默留下重复情境（id 回绕），
         # 表现为「唯一情境数」虚高、同一条情境重复计入训练集。直接报错。
         raise SystemExit(
-            f"通过筛选的情境只有 {len(keep)} 个，不足 N_SCENARIOS={N_SCENARIOS}。\n"
-            f"请调大 CANDIDATE_POOL（当前 {CANDIDATE_POOL}）或调大 CAP（当前 {CAP}）。"
+            f"通过筛选的情境只有 {len(keep)} 个，不足 n_scenarios={n_scenarios}。\n"
+            f"请调大 --pool-mult（当前 {pool_mult}，池 {pool_size}）"
+            f"或调大 --cap（当前 {cap}）。"
         )
     order = rng.permutation(len(keep))
-    keep = keep[order][:N_SCENARIOS]
+    keep = keep[order][:n_scenarios]
 
     scenarios = []
     for new_id, ci in enumerate(keep):
         sc = dict(candidates[int(ci)])
         sc["scenario_id"] = new_id
         scenarios.append(sc)
-    print(f"  候选 {len(candidates)} -> 保留 {len(scenarios)} 个情境")
+    print(f"  候选 {len(candidates)} -> 通过筛选 {sum(counts.values())} "
+          f"-> 保留 {len(scenarios)} 个情境")
 
     rows, gold_rows = [], []
-    for sc in scenarios:
+    util_matrix = np.empty((len(scenarios), n_dish), dtype=np.float32)
+    for si, (sc, ci) in enumerate(zip(scenarios, keep)):
         utils = _final_scale(utility_all(da, sc))
-        order_i = np.argsort(-utils)
+        util_matrix[si] = utils
+        order_i = np.argsort(-utils, kind="stable")
+        if int(order_i[0]) != int(best_idx[int(ci)]):
+            raise SystemExit(
+                f"情境 {si} 两遍扫描的最优菜不一致"
+                f"（{int(order_i[0])} vs {int(best_idx[int(ci)])}）—— "
+                f"说明效用函数里有依赖调用顺序/副作用的东西，必须先查清。")
         gold = dishes.iloc[order_i[0]]
         gold_rows.append({**sc, "gold_dish_id": int(gold.dish_id),
                           "gold_dish": gold.dish_name,
@@ -551,31 +632,30 @@ def build():
     samples.loc[(samples.split == "test") & (samples.weather == "雪"), "shift"] = "snow"
     samples["shift"] = samples["shift"].fillna("normal")
 
-    dishes.to_csv(OUT / "dishes.csv", index=False, encoding="utf-8-sig")
-    cat_table.to_csv(OUT / "categories.csv", index=False, encoding="utf-8-sig")
-    samples.to_csv(OUT / "samples.csv", index=False, encoding="utf-8-sig")
-    gold_df.to_csv(OUT / "scenarios.csv", index=False, encoding="utf-8-sig")
+    dishes.to_csv(out / "dishes.csv", index=False, encoding="utf-8-sig")
+    cat_table.to_csv(out / "categories.csv", index=False, encoding="utf-8-sig")
+    samples.to_csv(out / "samples.csv", index=False, encoding="utf-8-sig")
+    gold_df.to_csv(out / "scenarios.csv", index=False, encoding="utf-8-sig")
 
     # ---- 真实效用矩阵落盘（第二层排序目标的唯一正确来源）----
     # 每个情境下**所有菜**的真实效用。第 2 层要在「候选品类内」学排序，
     # 就必须知道品类内每道菜各自的效用。
     # 之前只存了 gold 一行，训练时只能拿「某一行观测到的效用」当整组的排序目标，
     # 等于给品类内每道菜发了同一个目标值 —— 排序目标因此退化（详见 train.group_targets）。
-    util_matrix = np.stack([
-        _final_scale(utility_all(da, sc)) for sc in scenarios
-    ]).astype(np.float32)
-    np.save(OUT / "scenario_utility.npy", util_matrix)
+    np.save(out / "scenario_utility.npy", util_matrix)
     # 行序与 scenarios.csv 严格一致，另存一份 id 便于交叉校验
-    np.save(OUT / "scenario_ids.npy", np.array([sc["scenario_id"] for sc in scenarios],
+    np.save(out / "scenario_ids.npy", np.array([sc["scenario_id"] for sc in scenarios],
                                                dtype=np.int64))
 
     # 额外产出：测试集按情境聚合的对照表
     gold_df[gold_df.split == "test"].to_csv(
-        OUT / "test_scenarios.csv", index=False, encoding="utf-8-sig")
+        out / "test_scenarios.csv", index=False, encoding="utf-8-sig")
 
     meta = {
         "seed": SEED,
-        "n_scenarios": N_SCENARIOS,
+        "n_scenarios": int(n_scenarios),
+        "candidate_pool": int(pool_size),
+        "cap_per_cat_slot": int(cap),
         "samples_per_scenario": SAMPLES_PER_SCENARIO,
         "n_dishes": len(dishes),
         "categories": CATEGORIES,
@@ -589,18 +669,34 @@ def build():
                         "healthy", "temperature", "carb", "protein"],
         "source_counts": samples["source"].value_counts().to_dict(),
     }
-    (OUT / "dataset_meta.json").write_text(
+    (out / "dataset_meta.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     return samples, gold_df, dishes, meta
 
 
-if __name__ == "__main__":
-    samples, gold, dish_df, meta = build()
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description="生成「今天该吃什么」决策数据集",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    ap.add_argument("--scenarios", type=int, default=N_SCENARIOS,
+                    help="唯一情境数")
+    ap.add_argument("--pool-mult", type=int, default=POOL_MULT,
+                    help="候选池 = scenarios * pool_mult")
+    ap.add_argument("--cap", type=int, default=None,
+                    help="每个「品类×时段」的配额上限（默认按 90/2000 等比缩放）")
+    ap.add_argument("--out", default=str(ART_CANON),
+                    help="输出目录（放量实验请用独立目录，不要覆盖线上 artifacts）")
+    ap.add_argument("--seed", type=int, default=None, help="覆盖随机种子")
+    args = ap.parse_args(argv)
+
+    samples, gold, dish_df, meta = build(n_scenarios=args.scenarios, out=args.out,
+                                         pool_mult=args.pool_mult, cap=args.cap,
+                                         seed=args.seed)
     print("=" * 62)
-    print("数据集生成完成 ->", OUT)
+    print("数据集生成完成 ->", args.out)
     print("=" * 62)
     print(f"菜品数        : {meta['n_dishes']}   (品类 {len(meta['categories'])} 个)")
-    print(f"唯一情境数    : {meta['n_scenarios']}")
+    print(f"唯一情境数    : {meta['n_scenarios']}   (候选池 {meta['candidate_pool']}, CAP {meta['cap_per_cat_slot']})")
     print(f"总样本行数    : {meta['n_samples']}")
     print(f"按 split      : {meta['split_counts']}")
     print(f"按情境 split  : {meta['scenario_split_counts']}")
@@ -618,8 +714,15 @@ if __name__ == "__main__":
     print(f"  并列(<0.002)比例     : {(g < 0.002).mean():.1%}")
     print(f"  清晰(>0.008)比例     : {(g > 0.008).mean():.1%}")
     print("-" * 62)
+    print("各品类 × 时段 的情境数（CAP 是否生效）：")
+    print(pd.crosstab(gold.gold_category, gold.time_slot).to_string())
+    print("-" * 62)
     print("样例（前 6 行）：")
     cols = ["scenario_id", "time_slot", "hunger", "available_time", "mood", "weather",
             "companion", "health_goal", "spicy_tol", "dish_name", "category",
             "utility", "observed_signal", "split", "shift"]
     print(samples[cols].head(6).to_string(index=False))
+
+
+if __name__ == "__main__":
+    main()

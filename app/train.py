@@ -632,9 +632,15 @@ def softmax_ce_soft(logits, target):
 
 
 def predict_row(row, cuisine_model, dish_model, topk=3, use_filter=True):
+    """单条情境的推荐。
+
+    `cuisine_model=None` 表示**单阶段模型**（§7.4 整目录 softmax）：
+    菜品打分器已经用「全部 824 道菜」的 softmax 训练过，分数跨品类可比，
+    不需要（也不该）先做品类过滤。
+    """
     ctx = pd.DataFrame([row])
     c, n = encode_context(ctx)
-    if use_filter:
+    if use_filter and cuisine_model is not None:
         w = int(cuisine_model.forward(c, n)[0].argmax())
         cand = np.where(DISH_CAT_IDX[:, 0] == w)[0]
     else:

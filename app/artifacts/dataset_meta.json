@@ -1,6 +1,8 @@
 {
   "seed": 20240617,
-  "n_scenarios": 2000,
+  "n_scenarios": 20000,
+  "candidate_pool": 280000,
+  "cap_per_cat_slot": 900,
   "samples_per_scenario": 3,
   "n_dishes": 824,
   "categories": [
@@ -24,20 +26,20 @@
     "长三角粉面",
     "面包甜点"
   ],
-  "n_samples": 7336,
+  "n_samples": 74242,
   "split_counts": {
-    "train": 5162,
-    "test": 1112,
-    "val": 1062
+    "train": 58676,
+    "val": 10360,
+    "test": 5206
   },
   "scenario_split_counts": {
-    "train": 1412,
-    "test": 304,
-    "val": 284
+    "train": 15780,
+    "val": 2820,
+    "test": 1400
   },
   "shift_counts": {
-    "normal": 744,
-    "snow": 368
+    "snow": 4462,
+    "normal": 744
   },
   "context_fields": [
     "time_slot",
@@ -63,7 +65,7 @@
     "protein"
   ],
   "source_counts": {
-    "chosen": 6000,
-    "considered": 1336
+    "chosen": 60000,
+    "considered": 14242
   }
 }
