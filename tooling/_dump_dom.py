@@ -52,7 +52,7 @@ def main():
         return len(re.findall(pat, dom))
 
     print()
-    print("form 内 .field 个数 :", count(r'class="field"'))
+    print("form 内 .field 个数 :", count(r'class="field[ "]'))   # 含 class="field wide"
     print("labels              :", count(r"<label>"))
     m_pre = re.search(r'id="presets">(.*?)</div>', dom, re.S)
     print("presets 按钮        :",

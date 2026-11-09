@@ -8,8 +8,9 @@ smoke_ui.py —— 界面与接口的自动验收（《前端交接文档》§1.
   补丁   snapshot_ui.py 里每一处 html.replace 的目标串是否还存在于页面中
          （**静默 no-op** 是这套前端最隐蔽的故障：replace 找不到目标也不报错，
           快照会悄悄变成空表单。这里用 AST 抽出目标串逐条核对。）
-  DOM    用 headless Chrome/Edge 真渲染页面、真点一次「给我推荐」，验证预设 /
-         字段 / 忌口按钮数量、首屏模型措辞、结果区是不是真的画出来了
+  DOM    用 headless Chrome/Edge 真渲染页面：点一次「给我推荐」，再走一遍
+         「搜索排除 → 重算」，验证预设 / 字段数量、首屏模型措辞、结果区、
+         忌口搜索链路是不是真的通了
   文档   docs/前端交接文档.md 里 `anchor:` 锚点是否都还能在 server.py 里找到，
          tooling/_dump_dom.py 的路径是否还指着 app/artifacts/
 
@@ -28,20 +29,18 @@ smoke_ui.py —— 界面与接口的自动验收（《前端交接文档》§1.
 from __future__ import annotations
 
 import argparse
-import ast
 import importlib.util
 import json
 import re
-import shutil
-import subprocess
 import sys
-import tempfile
 import threading
 import time
 import urllib.parse
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+
+from browser_env import dump_dom, find_chrome, first_error_line
 
 HERE = Path(__file__).resolve().parent          # app/
 ROOT = HERE.parent                              # 仓库根
@@ -76,8 +75,8 @@ DEFAULT_SCENARIO = {
 }
 
 # 浏览器里跑的那一小段脚本：同源 iframe 打开真实页面，等 boot() 跑完，
-# 数一遍 DOM，再点一次「给我推荐」，等结果画完，把观测结果写到
-# <html data-smoke="...">，由 --dump-dom 带回来。
+# 数一遍 DOM，点一次「给我推荐」，然后再走一遍「搜索排除 -> 重算」，
+# 把观测结果写到 <html data-smoke="...">，由 --dump-dom 带回来。
 HARNESS = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>smoke</title></head>
 <body style="margin:0">
@@ -90,35 +89,105 @@ HARNESS = """<!DOCTYPE html>
       encodeURIComponent(JSON.stringify(out)));
     document.title = 'smoke-done';
   }
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
   function txt(el){ return el ? (el.textContent || '').replace(/\\s+/g, ' ').trim() : ''; }
   var f = document.getElementById('f');
   f.addEventListener('load', function(){
-    setTimeout(function(){
+    (async function(){
       var d = null;
       try { d = f.contentDocument; } catch (e) { out.error = 'iframe: ' + e; push(); return; }
       if (!d) { out.error = 'contentDocument 为空'; push(); return; }
+      await sleep(900);
       function cnt(s){ return d.querySelectorAll(s).length; }
       out.presets = cnt('#presets button');
       out.fields = cnt('#form .field');
       out.chips = cnt('#chips button');
+      out.dom_nodes = d.querySelectorAll('*').length;
+      out.has_q = !!d.getElementById('q');
       out.stage_label = txt(d.getElementById('stage-label'));
       out.stats = txt(d.getElementById('stats'));
       out.go_text = txt(d.getElementById('go'));
+      var goEl = d.getElementById('go');
+      out.go_top = goEl ? Math.round(goEl.getBoundingClientRect().top) : null;
+      out.viewport_h = Math.round(f.getBoundingClientRect().height);
+      var fg = d.getElementById('form');
+      out.form_cols = fg
+        ? getComputedStyle(fg).gridTemplateColumns.split(' ').filter(Boolean).length : 0;
       if (!out.fields || !out.presets) { push(); return; }   // boot() 没跑起来，别点
       var go = d.getElementById('go');
       if (!go) { out.error = '找不到 #go'; push(); return; }
       go.click();
-      setTimeout(function(){
-        out.pick = txt(d.querySelector('#out .pick .name'));
-        out.reason = txt(d.querySelector('#out .pick .why'));
-        out.alts = cnt('#out .alt');
-        out.raw_rows = cnt('#out table.raw tr');
-        out.fine = txt(d.querySelector('#out .fine'));
-        out.truth = txt(d.querySelector('#out .truth'));
-        out.out_empty = txt(d.querySelector('#out .empty'));
-        push();
-      }, 2500);
-    }, 900);
+      out.loading_seen = !!d.querySelector('#out .loading');   // 点完立刻读：run() 同步设了加载态
+      await sleep(2500);
+      out.pick = txt(d.querySelector('#out .pick .name'));
+      out.reason = txt(d.querySelector('#out .pick .why'));
+      out.alts = cnt('#out .alt');
+      out.raw_rows = cnt('#out table.raw tr');
+      var r1 = d.querySelectorAll('#out table.raw tr')[1];
+      out.raw_cols = r1 ? r1.querySelectorAll('td').length : 0;
+      out.raw_head = txt(d.querySelector('#out table.raw th:last-child'));
+      out.raw_first_gap = txt(r1 ? r1.querySelectorAll('td')[2] : null);
+      out.pick_meta = txt(d.querySelector('#out .pick .meta'));
+      out.alt_pcts = cnt('#out .alt .pct');
+      out.fine = txt(d.querySelector('#out .fine'));
+      out.truth = txt(d.querySelector('#out .truth'));
+      out.out_empty = txt(d.querySelector('#out .empty'));
+      // 无障碍：分段按钮的选中态、按钮组语义、结果区的 aria-live
+      out.pressed = cnt('#form [aria-pressed="true"]');
+      out.segs_labeled = cnt('#form .seg[role="group"][aria-label]');
+      out.form_keys = cnt('#form .field[data-key]');
+      out.aria_live = (d.getElementById('out') || {}).getAttribute
+        ? d.getElementById('out').getAttribute('aria-live') : null;
+
+      function noteText(){
+        var m = (d.getElementById('out').textContent || '').match(/已排除\\s*\\d+\\s*道菜/);
+        return m ? m[0].replace(/\\s+/g, ' ').trim() : '';
+      }
+
+      // ---- P1-2「不想吃这道 → 换一个」：点按钮应直接排除并重算 ----
+      var nope = d.querySelector('#out .pick .nope');
+      out.nope_exists = !!nope;
+      if (nope && out.pick) {
+        nope.click();
+        await sleep(200);
+        out.sel_after_nope = cnt('#sel button');
+        go.click();
+        await sleep(2500);
+        out.pick2 = txt(d.querySelector('#out .pick .name'));
+        out.excluded_note_1 = noteText();
+      }
+
+      // ---- 忌口面板：搜索 -> 点候选 -> 重算，验证这条链路真的通 ----
+      var q = d.getElementById('q');
+      if (q && out.pick2) {
+        q.value = out.pick2;
+        q.dispatchEvent(new Event('input', {bubbles:true}));
+        await sleep(300);
+        out.sug_after_search = cnt('#chips button');
+        var hit = null;
+        [].forEach.call(d.querySelectorAll('#chips button'), function(b){
+          if (!hit && (b.textContent || '').trim() === out.pick2) hit = b;
+        });
+        out.sug_first = hit ? txt(hit) : '';
+        if (hit) hit.click();
+        out.sel_count = cnt('#sel button');
+        go.click();
+        await sleep(2500);
+        out.pick3 = txt(d.querySelector('#out .pick .name'));
+        out.excluded_note_2 = noteText();
+      }
+      // ---- 错误态：把 fetch 换成必失败，看提示是不是「服务没连上」那种可操作的 ----
+      var w = f.contentWindow;
+      var origFetch = w.fetch;
+      w.fetch = function(){ return Promise.reject(new TypeError('Failed to fetch')); };
+      go.click();
+      await sleep(600);
+      out.error_text = txt(d.querySelector('#out .error'));
+      out.error_class = !!d.querySelector('#out .error');
+      w.fetch = origFetch;
+
+      push();
+    })();
   });
 })();
 </script>
@@ -259,12 +328,13 @@ def check_predict(base: str, meta: dict) -> dict:
     eq("状态码 200", status, 200)
     d = json.loads(body.decode("utf-8"))
 
-    check("响应体积 < 60 KB", len(body) < 60 * 1024, f"{len(body) / 1024:.1f} KB",
+    check("响应体积 < 10 KB", len(body) < 10 * 1024, f"{len(body) / 1024:.1f} KB",
           f"{len(body) / 1024:.1f} KB 已超阈值")
     check("单次推荐耗时 < 500 ms", ms < 500, f"{ms:.0f} ms")
     check("响应字段齐全", PREDICT_KEYS <= set(d), "", f"缺：{PREDICT_KEYS - set(d)}")
     eq("items 条数 = topk", len(d["items"]), payload["topk"])
-    eq("all_scores 条数 = candidates", len(d["all_scores"]), d["candidates"])
+    eq("all_scores 条数 = min(20, candidates)", len(d["all_scores"]),
+       min(20, d["candidates"]))
     eq("rank 从 1 连续", [i["rank"] for i in d["items"]],
        list(range(1, len(d["items"]) + 1)))
     probs = [i["prob"] for i in d["items"]]
@@ -272,6 +342,8 @@ def check_predict(base: str, meta: dict) -> dict:
           f"{probs[0]:.3f} -> {probs[-1]:.3f}")
     check("每条推荐都带 reason", all(i["reason"] for i in d["items"]),
           d["items"][0]["reason"])
+    check("items 里没有历史遗留的 match 字段",
+          all("match" not in i for i in d["items"]))
 
     first = d["items"][0]["dish_name"]
     d2 = post_json(base, {**payload, "exclude": [first]})
@@ -301,8 +373,8 @@ def check_predict(base: str, meta: dict) -> dict:
     return d
 
 
-def check_page(base: str, meta: dict, d: dict) -> tuple[str, list[str]]:
-    group("页面与快照补丁")
+def check_page(base: str, meta: dict, d: dict) -> str:
+    group("页面与快照来源")
     status, body = http_get(base, "/")
     eq("GET / 状态码 200", status, 200)
     page = body.decode("utf-8")
@@ -316,80 +388,18 @@ def check_page(base: str, meta: dict, d: dict) -> tuple[str, list[str]]:
     ext = re.findall(r'(?:src|href)="(https?://[^"]+)"', page)
     check("没有外部 CDN / 网络依赖", not ext, "0 个外链", f"发现外链：{ext}")
 
-    # ---- 关键：snapshot_ui.py 的每一处 html.replace 目标都必须还在页面里 ----
-    try:
-        needles = snapshot_patch_targets()
-    except FileNotFoundError:
-        needles = []
-        skip("读取 snapshot_ui.py", "文件不存在")
-    if needles:
-        dead = [n for n in needles if n not in page]
-        check(f"snapshot_ui.py 的 {len(needles)} 处 replace 目标全部命中",
-              not dead, "没有静默 no-op",
-              "失效目标（改这里会静默生成空快照）：" +
-              " ｜ ".join(repr(n)[:70] for n in dead))
-    else:
-        skip("snapshot_ui.py 补丁目标", "没解析到 replace")
+    # 快照现在复用真实页面渲染：snapshot_ui.py 里不能再有第二份渲染/字符串补丁
+    snap_src = (HERE / "snapshot_ui.py").read_text(encoding="utf-8")
+    legacy = [k for k in ("def render_block", "html.replace(") if k in snap_src]
+    check("snapshot_ui.py 不再有第二份渲染（只走真实 draw()）", not legacy,
+          "只用真实页面", f"又出现了：{legacy}")
 
+    check("页面定义了 :focus-visible 焦点样式", ":focus-visible" in page)
     # 单阶段 / 两层 的说明文字必须两套都在（具体渲染哪套由 DOM 组验证）
     check("页面含两套打分口径说明",
           "分数跨品类可比" in page and "只能在同一品类内横向比较" in page,
           "single / two_layer 各一套")
-    return page, [n for n in needles]
-
-
-def snapshot_patch_targets() -> list[str]:
-    """从 snapshot_ui.py 里抽出所有 html.replace(目标, ...) 的目标串。"""
-    src = (HERE / "snapshot_ui.py").read_text(encoding="utf-8")
-    tree = ast.parse(src)
-    out: list[str] = []
-    for node in ast.walk(tree):
-        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "replace"
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == "html" and node.args):
-            a0 = node.args[0]
-            if isinstance(a0, ast.Constant) and isinstance(a0.value, str):
-                out.append(a0.value)
-    return out
-
-
-def find_chrome() -> str | None:
-    for p in (r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-              r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-              r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-              r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"):
-        if Path(p).exists():
-            return p
-    for n in ("chrome", "msedge", "chromium"):
-        w = shutil.which(n)
-        if w:
-            return w
-    return None
-
-
-def dump_dom(exe: str, url: str) -> tuple[str, str]:
-    """返回 (DOM, stderr)。stdout 用管道即可；失败时 stderr 里能看出原因。"""
-    prof = tempfile.mkdtemp(prefix="smoke_dom_")
-    try:
-        cmd = [exe, "--headless=new", "--disable-gpu", "--no-sandbox",
-               "--no-first-run", "--disable-extensions", "--hide-scrollbars",
-               f"--user-data-dir={prof}", "--virtual-time-budget=12000",
-               "--window-size=1280,900", "--dump-dom", url]
-        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", timeout=120)
-        return r.stdout or "", r.stderr or ""
-    finally:
-        shutil.rmtree(prof, ignore_errors=True)
-
-
-def first_error_line(stderr: str) -> str:
-    for line in stderr.splitlines():
-        line = line.strip()
-        if line and ("FATAL" in line or "ERROR" in line or "denied" in line.lower()
-                     or "拒绝" in line):
-            return re.sub(r"^\[[^\]]*\]\s*", "", line)[:90]
-    return (stderr.strip().splitlines() or [""])[0][:90]
+    return page
 
 
 def check_dom(base: str, meta: dict, d: dict, enabled: bool, local: bool) -> None:
@@ -425,7 +435,20 @@ def check_dom(base: str, meta: dict, d: dict, enabled: bool, local: bool) -> Non
 
     eq("预设按钮数量", sm.get("presets"), 10)
     eq("表单 .field 数量", sm.get("fields"), 10)
-    eq("忌口按钮数量 = 菜品数", sm.get("chips"), len(meta["dishes"]))
+    eq("首屏不再铺 824 个忌口按钮", sm.get("chips"), 0)
+    check("首屏 DOM 节点 < 400", (sm.get("dom_nodes") or 0) < 400,
+          f"{sm.get('dom_nodes')} 个")
+    check("忌口面板是搜索框", bool(sm.get("has_q")), "已找到 #q")
+    eq("宽屏表单两列", sm.get("form_cols"), 2)
+    # 无障碍：aria-pressed 跟着选中态走，分段按钮组有 role=group + aria-label
+    eq("aria-pressed=true 的按钮数 = 有分段的字段数", sm.get("pressed"), 9)
+    eq(".seg 都带 role=group + aria-label", sm.get("segs_labeled"), 9)
+    eq("每个 .field 都带 data-key", sm.get("form_keys"), 10)
+    eq("结果区是 aria-live=polite", sm.get("aria_live"), "polite")
+    check("主按钮在首屏内（#go 顶部 < 820 px）",
+          (sm.get("go_top") or 99999) < 820,
+          f"top={sm.get('go_top')} px / 视口 {sm.get('viewport_h')} px",
+          f"#go 顶部在 {sm.get('go_top')} px，视口只有 {sm.get('viewport_h')} px")
     want = "单阶段" if meta["stage"] == "single" else "两层"
     check("首屏 #stage-label 与模型结构一致", want in sm.get("stage_label", ""),
           sm.get("stage_label", ""))
@@ -433,6 +456,7 @@ def check_dom(base: str, meta: dict, d: dict, enabled: bool, local: bool) -> Non
           sm.get("stats", "")[:60])
 
     # 点了「给我推荐」之后
+    check("点击后结果区先进入加载态", bool(sm.get("loading_seen")), "看到 .loading")
     check("#go 之后出结果（没有报错占位）",
           bool(sm.get("pick")) and not sm.get("out_empty"),
           sm.get("pick", ""), sm.get("out_empty") or "结果区没有 .pick")
@@ -457,8 +481,42 @@ def check_dom(base: str, meta: dict, d: dict, enabled: bool, local: bool) -> Non
               "跨品类没有可比性" not in sm.get("fine", ""),
               sm.get("fine", "")[:48] + "...",
               "页面还在用两层口径：" + sm.get("fine", "")[:40])
-    info("原始打分表行数", f"{sm.get('raw_rows')} 行"
-         "（P0-1 未修时 = 菜品数 + 表头）")
+    check("原始打分表只列头部 20 名", 1 < (sm.get("raw_rows") or 0) <= 21,
+          f"{sm.get('raw_rows')} 行（含表头）")
+    eq("原始打分表三列（菜 / 品类 / 与第 1 名差）", sm.get("raw_cols"), 3)
+    eq("表头第三列是「与第 1 名差」", sm.get("raw_head"), "与第 1 名差")
+    eq("第 1 名那行不显示分数（—）", sm.get("raw_first_gap"), "—")
+    check("首推显示相对倾向", "相对倾向" in (sm.get("pick_meta") or ""),
+          sm.get("pick_meta", ""))
+    eq("每条备选都带相对倾向", sm.get("alt_pcts"), 4)
+
+    # ---- P1-2「不想吃这道 → 换一个」：点按钮应直接排除并重算 ----
+    check("首推卡片有「不想吃这道」按钮", bool(sm.get("nope_exists")))
+    eq("点按钮后已排除 1 道", sm.get("sel_after_nope"), 1)
+    check("「不想吃这道」之后首推换人",
+          bool(sm.get("pick2")) and sm.get("pick2") != sm.get("pick"),
+          f"{sm.get('pick')} -> {sm.get('pick2')}",
+          f"首推仍是 {sm.get('pick2')!r}（exclude 没生效？）")
+    check("结果区提示「已排除 1 道菜」",
+          sm.get("excluded_note_1") == "已排除 1 道菜", sm.get("excluded_note_1", ""))
+
+    # ---- 忌口搜索链路：搜当前首推 -> 出现候选 -> 点掉 -> 重算 ----
+    n_sug = sm.get("sug_after_search") or 0
+    check("搜索当前首推能出候选（1~8 条）", 1 <= n_sug <= 8, f"{n_sug} 条")
+    check("候选里能找到刚搜的那道菜",
+          sm.get("sug_first") == sm.get("pick2"), sm.get("sug_first", ""))
+    eq("再点候选后已排除 2 道", sm.get("sel_count"), 2)
+    check("再排除后首推又换人",
+          bool(sm.get("pick3")) and sm.get("pick3") != sm.get("pick2"),
+          f"{sm.get('pick2')} -> {sm.get('pick3')}")
+    check("结果区提示「已排除 2 道菜」",
+          sm.get("excluded_note_2") == "已排除 2 道菜", sm.get("excluded_note_2", ""))
+
+    # ---- 错误态：fetch 失败时应给出「服务没起来」这种能照做的提示 ----
+    err_text = sm.get("error_text") or ""
+    check("服务连不上时显示可操作的错误提示",
+          bool(sm.get("error_class")) and "启动.bat" in err_text,
+          err_text[:56], f"错误提示不对：{err_text[:80]!r}")
 
 
 def check_docs(page: str) -> None:
@@ -524,7 +582,7 @@ def main(argv: list[str] | None = None) -> int:
 
         meta = check_meta(base)
         d = check_predict(base, meta)
-        page, _ = check_page(base, meta, d)
+        page = check_page(base, meta, d)
         check_dom(base, meta, d, enabled=not args.no_dom, local=local)
         check_docs(page)
     except Exception as e:                            # noqa: BLE001

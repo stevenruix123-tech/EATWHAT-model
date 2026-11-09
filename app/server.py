@@ -151,7 +151,7 @@ def predict(payload: dict) -> dict:
             "dish_name": DISH_NAMES[did],
             "category": str(d.category),
             "prob": round(float(p[j]), 4),
-            "match": round(float(p[j]), 4),
+            # 注意：这里以前还有个 "match"（和 prob 完全相同的历史遗留字段），2026-11-09 删了。
             "score": round(float(scores[j]) if scores[j] > -1e8 else 0.0, 4),
             "reason": R.why(d, sc),
             "price": int(d.price),
@@ -186,11 +186,13 @@ def predict(payload: dict) -> dict:
         "candidates": int(len(cand)),
         "excluded": int(ex_mask.sum()),
         "items": items,
-        # 该品类内所有候选的原始打分（不做任何美化，供用户自己判断差距）
+        # 头部候选的原始打分（不做任何美化，供用户自己判断差距）。
+        # **只发前 20 条**：单阶段下候选有 824 道，全发会让响应 96% 是这张表、
+        # 页面还要多画 824 行。总数看 `candidates`（就是参与打分的菜数）。
         "all_scores": sorted(
             [{"dish_name": DISH_NAMES[int(cand[k])], "score": round(float(scores[k]), 3)}
              for k in range(len(cand))],
-            key=lambda x: -x["score"]),
+            key=lambda x: -x["score"])[:20],
         "truth": truth,
     }
 
@@ -264,19 +266,30 @@ PAGE = r"""<!DOCTYPE html>
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
     font:15px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
-  header{padding:28px 20px 8px;max-width:1080px;margin:0 auto}
+  header{padding:22px 20px 8px;max-width:1080px;margin:0 auto}
   h1{margin:0;font-size:24px;letter-spacing:.5px}
   .sub{color:var(--muted);font-size:13px;margin-top:6px}
-  .wrap{max-width:1080px;margin:0 auto;padding:12px 20px 60px;
-    display:grid;grid-template-columns:1.05fr 1fr;gap:22px;align-items:start}
+  .wrap{max-width:1080px;margin:0 auto;padding:10px 20px 60px;
+    display:grid;grid-template-columns:1.15fr 1fr;gap:22px;align-items:start}
   @media (max-width:880px){ .wrap{grid-template-columns:1fr} }
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
-    padding:18px 18px 20px}
-  .card h2{margin:0 0 14px;font-size:15px;font-weight:600;color:var(--muted);
+    padding:16px 18px 20px}
+  .card h2{margin:0 0 10px;font-size:15px;font-weight:600;color:var(--muted);
     letter-spacing:.4px}
   .field{margin-bottom:14px}
-  .field > label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
-  .seg{display:flex;flex-wrap:wrap;gap:6px}
+  .field > label{display:block;font-size:13px;color:var(--muted);margin-bottom:5px}
+  /* 宽屏下表单两列：主按钮「给我推荐」不用滚才能看到（1280×900 下 #go 顶部 1014px -> ~720px）。
+     窄屏（手机 / 分屏）仍是一列。宽字段加 .wide 跨两列。 */
+  @media (min-width:720px){
+    #form{display:grid;grid-template-columns:1fr 1fr;column-gap:16px;align-items:start}
+    #form .field{margin-bottom:7px}
+    #form .field > label{margin-bottom:4px}
+    #form .field.wide{grid-column:1 / -1}
+    /* 半宽列里把胶囊收小一档，5~6 个选项才不至于只剩一个落单到第二行 */
+    #form .seg{gap:4px}
+    #form .seg button{padding:4px 8px;font-size:12px}
+  }
+  .seg{display:flex;flex-wrap:wrap;gap:5px}
   .seg button{border:1px solid var(--line);background:transparent;color:var(--ink);
     padding:6px 11px;border-radius:999px;font-size:13px;cursor:pointer;transition:.12s}
   .seg button:hover{border-color:var(--brand)}
@@ -287,9 +300,9 @@ PAGE = r"""<!DOCTYPE html>
   .go{width:100%;margin-top:8px;padding:12px;border:0;border-radius:10px;
     background:var(--brand);color:#fff;font-size:15px;font-weight:600;cursor:pointer}
   .go:hover{filter:brightness(1.06)}
-  .presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+  .presets{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px}
   .presets button{border:1px dashed var(--line);background:transparent;color:var(--muted);
-    padding:5px 10px;border-radius:999px;font-size:12.5px;cursor:pointer}
+    padding:4px 9px;border-radius:999px;font-size:12px;cursor:pointer}
   .presets button:hover{color:var(--brand);border-color:var(--brand)}
   .cuisine{font-size:13px;color:var(--muted);margin-bottom:12px}
   .bar{display:inline-block;height:7px;border-radius:4px;background:var(--bar);
@@ -299,6 +312,13 @@ PAGE = r"""<!DOCTYPE html>
   .pick .name{font-size:21px;font-weight:700;letter-spacing:.3px}
   .pick .meta{font-size:12.5px;color:var(--muted);margin-top:3px}
   .pick .why{font-size:13px;margin-top:8px;color:var(--ink);opacity:.85}
+  .pick .nope{margin-top:10px;border:1px solid var(--brand);background:transparent;
+    color:var(--brand);padding:5px 11px;border-radius:8px;font-size:12.5px;cursor:pointer}
+  .pick .nope:hover{background:var(--brand);color:#fff}
+  .loading{color:var(--muted);font-size:14px;padding:30px 4px;text-align:center}
+  .error{color:#b42318;font-size:13.5px;line-height:1.75;padding:16px 4px}
+  .error code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12.5px}
+  :focus-visible{outline:2px solid var(--brand);outline-offset:2px}
   .alt{display:flex;justify-content:space-between;gap:10px;padding:9px 2px;
     border-bottom:1px dashed var(--line);font-size:14px}
   .alt:last-child{border-bottom:0}
@@ -308,7 +328,8 @@ PAGE = r"""<!DOCTYPE html>
   table.raw th{text-align:left;color:var(--muted);font-weight:500;padding:3px 4px;
     border-bottom:1px solid var(--line)}
   table.raw td{padding:3px 4px;border-bottom:1px dashed var(--line)}
-  table.raw td:last-child{text-align:right;color:var(--muted)}
+  table.raw td.cat{color:var(--muted);white-space:nowrap}
+  table.raw td:last-child,table.raw th:last-child{text-align:right;color:var(--muted)}
   .pct{color:var(--muted);font-variant-numeric:tabular-nums;font-size:13px}
   .truth{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);
     font-size:12.5px;color:var(--muted)}
@@ -320,7 +341,13 @@ PAGE = r"""<!DOCTYPE html>
   .fine{font-size:12px;color:var(--muted);margin-top:10px}
   details{margin-top:12px}
   summary{cursor:pointer;font-size:13px;color:var(--muted)}
+  .picker{margin-top:10px}
+  .picker input[type=search]{width:100%;padding:8px 10px;border:1px solid var(--line);
+    border-radius:9px;background:transparent;color:var(--ink);font-size:13px;font-family:inherit}
+  .picker input[type=search]:focus{outline:none;border-color:var(--brand)}
+  .hint{font-size:12px;color:var(--muted);padding:6px 2px}
   .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .chips:empty{display:none}
   .chips button{border:1px solid var(--line);background:transparent;color:var(--muted);
     padding:4px 9px;border-radius:8px;font-size:12px;cursor:pointer}
   .chips button.rm{background:var(--brand);color:#fff;border-color:var(--brand)}
@@ -340,23 +367,74 @@ PAGE = r"""<!DOCTYPE html>
     <div id="form"></div>
     <button class="go" id="go">给我推荐</button>
     <details>
-      <summary>不想吃的东西（点一下排除，再点恢复）</summary>
-      <div class="chips" id="chips"></div>
+      <summary>不想吃的东西（搜菜名，点一下排除）</summary>
+      <div class="picker">
+        <input type="search" id="q" aria-label="按菜名搜索要排除的菜"
+               placeholder="输入菜名筛选，如 牛油 / 面 / 汤" autocomplete="off">
+        <div class="chips" id="sel"></div>
+        <div class="chips" id="chips"></div>
+      </div>
     </details>
     <div class="fine">模型只看这些情境特征和菜品属性，没有联网、没有调用大模型。</div>
   </section>
 
   <section class="card">
     <h2>推荐结果</h2>
-    <div id="out"><div class="empty">左边点几下，然后按「给我推荐」</div></div>
+    <div id="out" aria-live="polite"><div class="empty">左边点几下，然后按「给我推荐」</div></div>
   </section>
 </div>
 
 <script>
 let META=null, ST={}, EX=new Set();
+// 忌口面板的 DOM 与候选表：boot() 里初始化；draw() 里的「不想吃这道」也要复用
+let Q=null, SUG=null, SEL=null, NAMES=[];
+const pct = p => Math.round(p*100) + '%';
 
 function el(t,c,h){const e=document.createElement(t); if(c)e.className=c;
   if(h!==undefined)e.innerHTML=h; return e;}
+
+// 分段按钮的选中态：视觉 class 和 aria-pressed 必须一起改（否则读屏读不出选了什么）
+function markOn(seg, btn){
+  [...seg.children].forEach(x=>{
+    x.classList.remove('on'); x.setAttribute('aria-pressed','false');
+  });
+  btn.classList.add('on'); btn.setAttribute('aria-pressed','true');
+}
+
+// 分段按钮组：role=group + aria-label，读屏才知道这一组在问什么
+function segBox(label){
+  const seg = el('div','seg');
+  seg.setAttribute('role','group');
+  seg.setAttribute('aria-label', label);
+  return seg;
+}
+
+// 把 EX 渲染成可点掉的标签（点一下恢复）
+function renderSel(){
+  if(!SEL) return;
+  SEL.innerHTML = '';
+  [...EX].forEach(n=>{
+    const b = el('button','rm', n + ' ×');
+    b.title = '点一下恢复';
+    b.onclick = ()=>{ EX.delete(n); renderSel(); renderSug(); };
+    SEL.appendChild(b);
+  });
+}
+
+// 输入即筛：最多 8 条，已排除的不再出现
+function renderSug(){
+  if(!SUG) return;
+  SUG.innerHTML = '';
+  const kw = Q.value.trim();
+  if(!kw){ SUG.appendChild(el('div','hint','输入菜名筛选，最多显示 8 条')); return; }
+  const hit = NAMES.filter(n=>n.includes(kw) && !EX.has(n)).slice(0,8);
+  if(!hit.length){ SUG.appendChild(el('div','hint','没有匹配的菜，换个词试试')); return; }
+  hit.forEach(n=>{
+    const b = el('button',null,n);
+    b.onclick = ()=>{ EX.add(n); renderSel(); renderSug(); };
+    SUG.appendChild(b);
+  });
+}
 
 async function boot(){
   META = await (await fetch('/api/meta')).json();
@@ -382,6 +460,9 @@ async function boot(){
   const form = document.getElementById('form');
   META.fields.forEach(f=>{
     const box = el('div','field');
+    box.dataset.key = f.key;          // render() 按 key 找字段，不再靠下标对齐
+    // 选项多的字段横跨两列，免得半宽列里最后一个胶囊孤零零掉到第二行
+    if(f.key==='time_slot' || f.key==='taboo') box.classList.add('wide');
     box.appendChild(el('label',null,f.label));
     if(f.key==='available_time'){
       const r = el('input'); r.type='range'; r.min=5; r.max=150; r.step=5;
@@ -392,23 +473,25 @@ async function boot(){
       r.oninput = ()=>{ ST[f.key]=+r.value; v2.textContent = r.value+' 分钟'; };
       box.appendChild(r); box.appendChild(rv);
     } else if(f.key==='hunger'){
-      const seg = el('div','seg');
+      const seg = segBox(f.label);
       f.options.forEach(o=>{
         const b = el('button',null,o);
-        if(String(ST[f.key])===o) b.classList.add('on');
-        b.onclick = ()=>{ ST[f.key]=+o;
-          [...seg.children].forEach(x=>x.classList.remove('on')); b.classList.add('on'); };
+        const on = String(ST[f.key])===o;
+        if(on) b.classList.add('on');
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        b.onclick = ()=>{ ST[f.key]=+o; markOn(seg, b); };
         seg.appendChild(b);
       });
       box.appendChild(seg);
     } else {
-      const seg = el('div','seg');
+      const seg = segBox(f.label);
       const opts = (f.key==='taboo') ? ['', ...f.options.filter(x=>x)] : f.options;
       opts.forEach(o=>{
         const b = el('button',null,o===''?'无忌口':o);
-        if((ST[f.key]??'')===o) b.classList.add('on');
-        b.onclick = ()=>{ ST[f.key]=o;
-          [...seg.children].forEach(x=>x.classList.remove('on')); b.classList.add('on'); };
+        const on = (ST[f.key]??'')===o;
+        if(on) b.classList.add('on');
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        b.onclick = ()=>{ ST[f.key]=o; markOn(seg, b); };
         seg.appendChild(b);
       });
       box.appendChild(seg);
@@ -416,37 +499,37 @@ async function boot(){
     form.appendChild(box);
   });
 
-  // 菜品排除
-  const chips = document.getElementById('chips');
-  META.dishes.forEach(d=>{
-    const b = el('button',null,d.name);
-    b.dataset.name = d.name;
-    b.onclick = ()=>{
-      if(EX.has(d.name)){ EX.delete(d.name); b.classList.remove('rm'); }
-      else { EX.add(d.name); b.classList.add('rm'); }
-    };
-    chips.appendChild(b);
-  });
+  Q = document.getElementById('q');
+  SUG = document.getElementById('chips');
+  SEL = document.getElementById('sel');
+  NAMES = META.dishes.map(d=>d.name);
+  Q.addEventListener('input', renderSug);
+  renderSel(); renderSug();
 
   document.getElementById('go').onclick = run;
   render();
 }
 
 function render(){
-  // 让表单控件与 ST 同步（换预设时用）
-  document.querySelectorAll('#form .field').forEach((box,i)=>{
-    const f = META.fields[i];
+  // 让表单控件与 ST 同步（换预设时用）。
+  // 按 dataset.key 找字段，不靠 DOM 下标 —— 以后在表单里插任何元素都不会错位。
+  document.querySelectorAll('#form .field').forEach(box=>{
+    const f = META.fields.find(x=>x.key === box.dataset.key);
+    if(!f) return;
     if(f.key==='available_time'){
       const r = box.querySelector('input');
       r.value = ST[f.key] ?? 45;
       box.querySelector('.big').textContent = r.value+' 分钟';
     } else {
       const seg = box.querySelector('.seg');
-      [...seg.children].forEach(b=>b.classList.remove('on'));
       const opts = (f.key==='taboo') ? ['', ...f.options.filter(x=>x)] : f.options;
       const cur = String(ST[f.key] ?? (f.key==='hunger'?3:opts[0]));
       const idx = opts.findIndex(o=>String(o)===cur);
-      if(idx>=0) seg.children[idx].classList.add('on');
+      [...seg.children].forEach((b,i)=>{
+        const on = (i === idx);
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
     }
   });
 }
@@ -466,6 +549,8 @@ async function run(){
   const btn = document.getElementById('go');
   const out = document.getElementById('out');
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>正在算…';
+  // 结果区立刻进入加载态：否则右侧一直停着上一次的结果，用户不知道点没点上
+  out.innerHTML = '<div class="loading">正在按你的条件打分…</div>';
   try{
     const res = await fetch('/api/predict',{method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -474,7 +559,16 @@ async function run(){
     if(d.error) throw new Error(d.error);
     draw(d);
   }catch(e){
-    out.innerHTML = '<div class="empty">出错了：'+e.message+'</div>';
+    // fetch 抛 TypeError = 压根没连上（服务没起来）；其余按后端报错处理。
+    // 这两种情况用户该做的事完全不同，别糊成一句话。
+    const msg = String((e && e.message) || e);
+    const offline = (e instanceof TypeError) ||
+                    /Failed to fetch|NetworkError|Load failed/i.test(msg);
+    out.innerHTML = offline
+      ? '<div class="error">连不上本地服务。确认 <code>启动.bat</code> 还开着，' +
+        '或在本目录运行 <code>python server.py</code>，再刷新页面。</div>'
+      : '<div class="error">算的时候出错了：' + msg +
+        '<br>详细报错看服务端那个命令行窗口。</div>';
   }finally{
     btn.disabled=false; btn.textContent='给我推荐';
   }
@@ -488,7 +582,7 @@ function draw(d){
     ? '单阶段：整目录 softmax，直接在全部菜里排序'
     : '两层结构：先判断品类，再在品类内排序';
   const bar = (p)=>{const w=Math.max(6,Math.round(p*130));
-    return `<span class="bar" style="width:${w}px"></span>`;};
+    return `<span class="bar" aria-hidden="true" style="width:${w}px"></span>`;};
   const cu = el('div','cuisine');
   cu.innerHTML = (d.stage === 'single' ? '品类倾向（展示用）： ' : '第一层判断： ') + d.cuisine_top.map(c=>
     `${bar(c.prob)}<b>${c.name}</b> ${(c.prob*100).toFixed(0)}%`).join(' &nbsp;&nbsp; ');
@@ -497,30 +591,46 @@ function draw(d){
   const t = d.items[0];
   const pick = el('div','pick');
   pick.innerHTML = `<div class="name">${t.dish_name}</div>
-    <div class="meta">${t.category} · ${t.price} 元 · ${t.time_cost} 分钟</div>
-    <div class="why">为什么：${t.reason}</div>`;
+    <div class="meta">${t.category} · ${t.price} 元 · ${t.time_cost} 分钟 ·
+      相对倾向 ${pct(t.prob)}</div>
+    <div class="why">为什么：${t.reason}</div>
+    <button class="nope">不想吃这道 → 换一个</button>`;
+  // 排除并立刻重算：把菜名塞进 EX，再跑一次（后端本来就支持 exclude，零后端改动）
+  pick.querySelector('.nope').onclick = ()=>{
+    EX.add(t.dish_name); renderSel(); renderSug(); run();
+  };
   out.appendChild(pick);
 
   d.items.slice(1).forEach(x=>{
     const a = el('div','alt');
-    a.innerHTML = `<div><b>第{x.rank}名 · ${x.dish_name}</b>
-        <span class="tag">· ${x.category} · ${x.price}元 · ${x.reason}</span></div>`;
+    a.innerHTML = `<div><b>第${x.rank}名 · ${x.dish_name}</b>
+        <span class="tag">· ${x.category} · ${x.price}元 · ${x.reason}</span></div>
+      <span class="pct">${pct(x.prob)}</span>`;
     out.appendChild(a);
   });
 
-  // 展开：把候选的原始打分都列出来，不做任何美化。
+  // 展开：只列头部候选的原始打分（后端只发前 20 条），不做任何美化。
   // 说明文字必须跟着模型结构走：单阶段在整目录上统一排序，分数是**跨品类可比**的；
   // 只有两层模型才只能在品类内横向比较。写死一句会让页面自相矛盾。
+  // 表里不显示原始分（18.906 对用户没有意义），显示「与第 1 名的差」——
+  // 这就是 P1-1：分数绝对值未校准，差值才可读；品类列是因为单阶段分数跨品类可比。
   const det = el('details');
+  const catOf = new Map(META.dishes.map(x=>[x.name, x.category]));
+  const totalCand = d.candidates ?? d.all_scores.length;
+  const topScore = d.all_scores.length ? d.all_scores[0].score : 0;
   const detNote = d.stage === 'single'
-    ? '分数是模型学出来的效用预测值，单阶段在全部菜上统一排序，<b>分数跨品类可比</b>。'
-    : '分数是模型学出来的效用预测值，<b>只能在同一品类内横向比较</b>，' +
+    ? '「与第 1 名差」是模型打分之间的距离；单阶段在全部菜上统一排序，' +
+      '<b>分数跨品类可比</b>，差距可以直接横着比。'
+    : '「与第 1 名差」是模型打分之间的距离，<b>只能在同一品类内横向比较</b>，' +
       '跨品类没有可比性（这是两层结构的特点）。';
-  det.innerHTML = '<summary>看模型给每道菜的原始打分（不美化）</summary>' +
-    '<div class="fine">' + detNote + '同一批候选里分数越接近，说明这几道菜' +
+  det.innerHTML = '<summary>看头部 ' + d.all_scores.length + ' 名与第 1 名的差距（共 ' +
+      totalCand + ' 道候选，不美化）</summary>' +
+    '<div class="fine">' + detNote + '差距越小，说明这几道菜' +
     '本来就差不多，随便挑一个都行。</div>' +
-    '<table class="raw"><tr><th>菜</th><th>分数</th></tr>' +
-    d.all_scores.map(s=>`<tr><td>${s.dish_name}</td><td>${s.score.toFixed(3)}</td></tr>`).join('') +
+    '<table class="raw"><tr><th>菜</th><th>品类</th><th>与第 1 名差</th></tr>' +
+    d.all_scores.map((s,i)=>`<tr><td>${s.dish_name}</td>` +
+      `<td class="cat">${catOf.get(s.dish_name) || '—'}</td>` +
+      `<td>${i === 0 ? '—' : Math.max(0, topScore - s.score).toFixed(3)}</td></tr>`).join('') +
     '</table>';
   out.appendChild(det);
 
